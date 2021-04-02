@@ -12,3 +12,7 @@ Contents:
 * *Full.csv*: Dataset with all data on all 327 included days in 2017 for both training and target prediction areas. 
 * *Modeling_Grid*: Shapefile for the entire training area
 * *small_grid*: Shapefile only for target prediction area. 
+
+**code**
+* *Two_stage.Rmd*: two stage model
+* *autogluon_try.ipynb*: autogluon script
