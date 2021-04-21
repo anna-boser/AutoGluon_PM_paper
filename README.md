@@ -12,6 +12,8 @@ Contents:
 * *Full.csv*: Dataset with all data on all 327 included days in 2017 for both training and target prediction areas. 
 * *Modeling_Grid*: Shapefile for the entire training area
 * *small_grid*: Shapefile only for target prediction area. 
+* *model_outputs*: a folder containing the model predictions over the *Small_Grid* for all the trained models
+* *CV_outputs*: a folder containing tables of the location-specific leave-one-out crossvalidations performed for each of the models. Each file contains the model performances (with uncertainties) as measured by bias, mean squared error, and $R^2$ for each monitoring location, as well as the aggregate for all locations in the larger training area and the aggregate for only the small target prediction area. 
 
 **code**
 * *Two_stage.Rmd*: two stage model
