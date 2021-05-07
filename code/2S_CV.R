@@ -198,7 +198,7 @@ Two_stage_predictions <- function(train_AOD, train_wo_AOD, test_AOD, test_wo_AOD
 ########################### Define cross-validation function ###################
 ################################################################################
 
-CV <- function(k, Data, indData, bw = NA, bw2 = NA){
+CV <- function(Data, indData, bw = NA, bw2 = NA){
   
   #initialize the dataframe
   fold_df <- data.frame(matrix(ncol = 6, nrow = 0))
@@ -224,29 +224,34 @@ CV <- function(k, Data, indData, bw = NA, bw2 = NA){
                         & indData$Day %in% unique(train_ind$Day) 
                         & indData$AOD == 0,]
     fold_df <- rbind(fold_df, Two_stage_predictions(train_AOD = train_D, 
-                                                    train_wo_AOD, 
+                                                    train_wo_AOD = train_ind, 
                                                     test_AOD = test_D, 
-                                                    test_wo_AOD, 
+                                                    test_wo_AOD = test_ind, 
                                                     bw = bw, 
                                                     bw2 = bw2))
+    print("tail(fold_df):")
+    print(tail(fold_df))
     
   }
-  fold_df$stations[k+1] <- "All"
-  
-  fold_df$Bias[k+1] <- mean(unlist(Es))
-  fold_df$MAE[k+1] <- mean(abs(unlist(Es)))
-  fold_df$MSE[k+1] <- mean(unlist(Es)^2)
-  fold_df$RMSE[k+1] <- sqrt(mean(unlist(Es)^2))
-  fold_df$NSE[k+1] <- 1 - (mean(unlist(Es)^2)/var(unlist(test_PM)))
-  fold_df$R2[k+1] <- cor(unlist(tp), unlist(test_PM))^2
-  
-  # paste0("CV MSE: ", MSE, ". R2: ", R2, ". RMSE: ", RMSE, ". MAE: ", MAE, ".")
   
   return(fold_df)
 }
 
+################################################################################
+########################### Run the cross-validation ###########################
+################################################################################
 
+start_time <- Sys.time()
+if (pod){
+  leave_one_out <- CV(w_AOD, ind_AOD, bw = NA, bw2 = NA)
+} else {
+  leave_one_out <- CV(w_AOD, ind_AOD, bw = 15, bw2 = 13)
+}
+# leave_one_out$stations <- leave_one_out$stations %>% unlist() %>% as.numeric()
+write.csv(leave_one_out, file = "Data/output/grids/2S.csv", row.names = FALSE)
+end_time <- Sys.time()
 
+end_time - start_time
 
 
 
