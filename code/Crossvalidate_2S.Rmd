@@ -1,0 +1,216 @@
+---
+title: "Two_stage_2.0"
+author: "Anna Boser"
+date: "7/28/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+library(cvTools)
+library(dplyr)
+library(tidyr)
+library(lme4)
+library(spgwr)
+library(leaps)
+library(sp)
+# library(GWmodel)
+library(here)
+```
+
+## Two-stage model creation and testing narrative
+
+I load in my data and set the Day as a factor. 
+```{r load_data}
+Data <- read.csv(file = here::here("Data", "Train.csv"))
+
+#make day factor for random effects
+Data$Day <- as.factor(Data$Day)
+```
+
+The idea here is you train it on the full set, you test it on the small subset, and then you apply it to the subsetted grid. 
+
+
+There are a few days missing BLH, so I get rid of those. Given that there are many missing AOD values, I separate the data into data with and without AOD/BLH and train models on both. The data that has AOD is trained and tested on the same data, but the data without the AOD is trained on the full dataset, except instead of the AOD value it has an indicator as to whether AOD is present, and then the training data is just the data without AOD with a column indicating that there is no AOD. 
+
+Required datasets: 
+
+For days with AOD: 
+1) Training data with AOD
+2) Grid containing days with AOD
+For days without AOD: 
+3) Full training set with indicator as to whether AOD is around
+4) Grid containing days without AOD and indicator indicating the missing AOD
+
+Outputs needed: 
+- R2 (and other metric) values from this split model, only AOD model, and no AOD model (depending on AOD presence) at each of the training sites (larger grid) for interpolation and mapping purposes.
+- Metric averages for split model, only AOD model, and no AOD model over the smaller grid
+- full map of modeled values on smaller grid
+
+#training data
+```{r filter_data}
+Data <- filter(Data, !is.na(BLH))
+w_AOD <- filter(Data, !is.na(AOD)) #1
+# wo_AOD <- filter(Data, is.na(AOD)) 
+# wo_AOD$AOD <- 0
+indfunc <- function(val){
+  if (is.na(val)){
+    return(0)
+  } else {
+    return(1)
+  }
+}
+ind_AOD <- Data
+ind_AOD$AOD <- unlist(lapply(ind_AOD$AOD, indfunc)) #3
+```
+
+CV showed that this reduced formula, obtained through BIC analysis, performs better than the full model.
+```{r LME_formula}
+LME_formula <- "PM ~ Elevation + 
+                      Emissions +
+                      Forest +
+                      Streets +
+                      Plumes_High +
+                      Plumes_Med +
+                      Plumes_Low +
+                      Max_Temp +
+                      Max_Wind +
+                      Rel_Humidity +
+                      BLH +
+                      AOD +
+                      (1 + 
+                         Plumes_High +
+                      Plumes_Med +
+                      Plumes_Low +
+                      Max_Temp +
+                      Max_Wind +
+                      Rel_Humidity +
+                      BLH +
+                      AOD| Day)"
+```
+
+```{r}
+GWR_formula <- "resid ~ AOD"
+```
+
+
+```{r}
+CV <- function(k, Data, indData, formula, gwr_formula, bw = NA, bw2 = NA){
+
+#parameters I want to save after each fold
+Es <- list()
+test_PM <- list()
+tp <- list()
+fold_df <- as.data.frame(matrix(data = NA, nrow = k + 1, ncol = 7))
+names(fold_df) <- c("stations", "MAE", "MSE", "RMSE", "NSE", "Bias", "R2")
+
+Ids <- unique(Data$Id)
+
+#loop through the folds and fit/test the full model each time.
+for(i in 1:length(Ids)){
+  paste0("Fold ", i)
+  # The way the two-stage model is broken down: 
+  # 1: use the training data to fit a linear mixed effects model
+  # 2: using the training data, predict the PM using the LME and calculate the residuals
+  # 3: use the training data residuals to fit the GWR model on the residuals (actual - predicted) from the LME model
+  # 4: use the test data to predict the PM with the LME model and the residuals from the LME model using the GWR model
+  # 5: add the gwr-predicted residuals to the lme-predicted PM values to obtain the final prediction. 
+  
+  train_D <- Data[Data$Id != Ids[i],]
+  test_D <- Data[Data$Id == Ids[i] & Data$Day %in% unique(train_D$Day),]
+  # test_D <- Data[station_folds == i & Data$Day,] #some days are not trained on. 
+  train_ind <- indData[indData$Id != Ids[i],]
+  test_ind <- indData[indData$Id == Ids[i] 
+                      & indData$Day %in% unique(train_ind$Day) 
+                      & indData$AOD == 0,]
+  
+  # 1:
+  lme_model <- lmer(formula = formula, 
+                 data = train_D)
+  lme_model_ind <- lmer(formula = formula, 
+                 data = train_ind)
+  
+  # 2:
+  train_D$resid <- train_D$PM - predict(lme_model) #training residuals
+  lme_predictions <- predict(lme_model, newdata = test_D) #testing predictions
+  
+  train_ind$resid <- train_ind$PM - predict(lme_model_ind) #training residuals
+  lme_predictions_ind <- predict(lme_model_ind, newdata = test_ind) #testing predictions
+  
+  # 3 and 4: 
+  
+  #convert train and test data to sp for easier use in spgwr
+  train_sp <- SpatialPointsDataFrame(coords = cbind(train_D$Lon, train_D$Lat), data = train_D, proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+  test_sp <- SpatialPointsDataFrame(coords = cbind(test_D$Lon, test_D$Lat), data = test_D, proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+
+  if (is.na(bw)){
+    gwr.bw <- gwr.sel(gwr_formula, data = train_sp, longlat = TRUE)
+  gwr_model <- gwr(gwr_formula, data = train_sp, bandwidth = gwr.bw, longlat = TRUE, fit.points = test_sp, predictions = TRUE)
+  } else {
+    gwr_model <- gwr(resid ~ AOD, data = train_sp, bandwidth = bw, longlat = TRUE, fit.points = test_sp, predictions = TRUE)
+  }
+  
+    train_sp_ind <- SpatialPointsDataFrame(coords = cbind(train_ind$Lon, train_ind$Lat), data = train_ind, proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+  test_sp_ind <- SpatialPointsDataFrame(coords = cbind(test_ind$Lon, test_ind$Lat), data = test_ind, proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+
+  if (is.na(bw2)){
+    gwr.bw_ind <- gwr.sel(gwr_formula, data = train_sp_ind, longlat = TRUE)
+  gwr_model_ind <- gwr(gwr_formula, data = train_sp_ind, bandwidth = gwr.bw_ind, longlat = TRUE, fit.points = test_sp_ind, predictions = TRUE)
+  } else {
+    gwr_model_ind <- gwr(resid ~ AOD, data = train_sp_ind, bandwidth = bw2, longlat = TRUE, fit.points = test_sp_ind, predictions = TRUE)
+  }
+
+  gwr_resid <- gwr_model$SDF$pred
+  gwr_resid_ind <- gwr_model_ind$SDF$pred
+
+  test_predictions <- gwr_resid + lme_predictions
+  test_predictions_ind <- gwr_resid_ind + lme_predictions_ind
+  
+  test_predictions <- c(test_predictions, test_predictions_ind)
+  test_actual <- c(test_D$PM, test_ind$PM)
+
+  test_stations <- unique(test_D$Id)
+
+  fold_df$stations[i] <- list(test_stations)
+
+  E <- (test_actual - test_predictions)
+  fold_df$Bias[i] <- mean(E)
+  fold_df$MAE[i] <- mean(abs(E))
+  fold_df$MSE[i] <- mean(E^2)
+  fold_df$RMSE[i] <- sqrt(mean(E^2))
+  fold_df$NSE[i] <- 1 - ((mean(E^2))/var(test_D$PM))
+  fold_df$R2[i] <- cor(test_predictions, test_actual)^2
+  
+  test_PM[[i]] <- test_actual
+  Es[[i]] <- E
+  tp[[i]] <- test_predictions
+  
+  # paste0("Fold ", i," has MSE ", mean(E^2), ". The stations that are in this fold are: station " , test_stations , ".")
+
+}
+fold_df$stations[k+1] <- "All"
+
+fold_df$Bias[k+1] <- mean(unlist(Es))
+fold_df$MAE[k+1] <- mean(abs(unlist(Es)))
+fold_df$MSE[k+1] <- mean(unlist(Es)^2)
+fold_df$RMSE[k+1] <- sqrt(mean(unlist(Es)^2))
+fold_df$NSE[k+1] <- 1 - (mean(unlist(Es)^2)/var(unlist(test_PM)))
+fold_df$R2[k+1] <- cor(unlist(tp), unlist(test_PM))^2
+
+# paste0("CV MSE: ", MSE, ". R2: ", R2, ". RMSE: ", RMSE, ". MAE: ", MAE, ".")
+
+return(fold_df)
+}
+```
+
+```{r}
+start_time <- Sys.time()
+leave_one_out <- CV(34, w_AOD, ind_AOD, LME_formula, GWR_formula, bw = 15, bw2 = 13)
+leave_one_out$stations <- leave_one_out$stations %>% unlist() %>% as.numeric()
+write.csv(leave_one_out, file = here::here("Results", "Evaluate", "GWR_Eval.csv"), row.names = FALSE)
+end_time <- Sys.time()
+
+end_time - start_time
+```
+

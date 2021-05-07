@@ -10,9 +10,9 @@ Contents:
 * *Small_Ids.csv*: A list of the ids for the epa monitors found within the target prediction area (as opposed to the entire training area)
 * *Train.csv*: The dataset used to train the models: only includes the pixels with monitors over the entire training area. 
 * *Full.csv*: Dataset with all data on all 327 included days in 2017 for both training and target prediction areas. 
-* *Modeling_Grid*: Shapefile for the entire training area
-* *small_grid*: Shapefile only for target prediction area. 
+* *Modeling_Grid*: Shapefile for target prediction area
 
 **code**
-* *Two_stage.Rmd*: two stage model
+* *Crossvalidate_2S.Rmd*: two stage model training and evaluation
+* *Apply_model_2S.Rmd*: two stage model training application to prediction area
 * *autogluon_try.ipynb*: autogluon script

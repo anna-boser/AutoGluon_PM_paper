@@ -1,0 +1,90 @@
+---
+title: "CV_figures"
+author: "Anna Boser"
+date: "5/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+```
+
+## Analysis of the crossvalidated values by day, location, etc
+
+```{r}
+# read it in
+cv_df <- read.csv("~/Downloads/all_cv_preds.csv")
+```
+
+```{r}
+# plot of rmse by actual PM value by model
+ggplot(cv_df, aes(x = PM, y = rmse, color = Model)) + geom_point() + geom_smooth(se = F)
+
+```
+
+```{r}
+#let's try r2 by day
+day_df = cv_df %>% group_by(Day, Model) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = mean(sqrt(sum((PM-PM_pred)^2))),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM))
+ggplot(day_df, aes(x = mean_PM, y = rmse, color = Model)) + geom_point() + geom_smooth(se = F)
+```
+
+```{r}
+ggplot(day_df, aes(x = mean_PM, y = r2, color = Model)) + geom_point() + geom_smooth(se = F)
+```
+
+```{r}
+ggplot(day_df, aes(x = log(sd_PM), y = r2, color = Model)) + geom_point() + geom_smooth(se = F)
+ggplot(day_df, aes(x = log(sd_PM), y = rmse, color = Model)) + geom_point() + geom_smooth(se = F)
+```
+
+```{r}
+# boxplot of rmse, bias, and r2 by model. 
+station_df = cv_df %>% group_by(station, Model) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = mean(sqrt(sum((PM-PM_pred)^2))),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM), 
+            bias = PM_pred - PM)
+ggplot(station_df, aes(x = Model, y = r2)) + geom_boxplot()
+ggplot(station_df, aes(x = Model, y = rmse)) + geom_boxplot()
+ggplot(station_df, aes(x = Model, y = bias)) + geom_violin()
+```
+```{r}
+day_df = cv_df %>% group_by(Day, Model) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = mean(sqrt(sum((PM-PM_pred)^2))),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM), 
+            bias = PM_pred - PM)
+ggplot(day_df, aes(x = Model, y = r2)) + geom_boxplot()
+ggplot(day_df, aes(x = Model, y = rmse)) + geom_boxplot()
+ggplot(day_df, aes(x = Model, y = bias)) + geom_violin()
+
+```
+
+```{r}
+days = cv_df %>% group_by(Day) %>% 
+  summarise(mean_PM = mean(PM))
+high_pm_days <- days$Day[days$mean_PM>=15]
+# there are only 24 high pm days!
+cv_df$high_pm_day <- cv_df$Day %in% high_pm_days
+
+station_df = cv_df %>% group_by(station, Model, high_pm_day) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = mean(sqrt(sum((PM-PM_pred)^2))),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM), 
+            bias = PM_pred - PM)
+ggplot(station_df, aes(x = Model, y = r2, col = high_pm_day)) + geom_boxplot(position = 'dodge')
+ggplot(station_df, aes(x = Model, y = rmse, col = high_pm_day)) + geom_boxplot(position = 'dodge')
+ggplot(station_df, aes(x = Model, y = bias, col = high_pm_day)) + geom_violin(position = 'dodge')
+```
+
+
+
