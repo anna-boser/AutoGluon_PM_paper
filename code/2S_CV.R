@@ -263,7 +263,7 @@ if (train_bw){
 if (spatial_cv){
   write.csv(leave_one_out, file = "Data/output/CV/2S.csv", row.names = FALSE)
 } else {
-  write.csv(leave_one_out, file = "Data/output/CV/2S_random_CV.csv", row.names = FALSE)
+  write.csv(leave_one_out, file = "Data/output/CV_random/2S.csv", row.names = FALSE)
 }
 
 end_time <- Sys.time()
