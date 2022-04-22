@@ -6,13 +6,16 @@ library(spgwr)
 library(leaps)
 library(sp)
 
-pod = TRUE
+pod = TRUE # are you running this on pod or locally? 
 
 if (pod){
   setwd("~/AutoGluon_PM_paper")
 } else {
   setwd("~/Documents/GitHub/AutoGluon_PM_paper")
 }
+
+train_bw <- FALSE #train the bandwidth or use pre-trained bandwidth? 
+spatial_cv <- FALSE #spatial CV or random 10-fold? 
 
 ################################################################################
 ########################### Load data ##########################################
@@ -198,17 +201,25 @@ Two_stage_predictions <- function(train_AOD, train_wo_AOD, test_AOD, test_wo_AOD
 ########################### Define cross-validation function ###################
 ################################################################################
 
-CV <- function(Data, indData, bw = NA, bw2 = NA){
+CV <- function(Data, indData, bw = NA, bw2 = NA, spatial_cv = TRUE){
   
   #initialize the dataframe
   fold_df <- data.frame(matrix(ncol = 6, nrow = 0))
   colnames(fold_df) <- c('station', 'Day', 'PM', 'PM_pred', 'rmse', 'bias')
-
-  Ids <- unique(Data$Id)
+  
+  if (spatial_cv){ # if spatial cv, use the station as the fold
+    Data$fold <- Data$Id
+    indData$fold <- indData$Id
+  } else { # if we are doing a random 10-fold CV, the fold should be a random number between 1 and 10
+    Data$fold <- sample(1:10, nrow(Data), replace = TRUE)
+    indData$fold <- sample(1:10, nrow(indData), replace = TRUE)
+  }
+  
+  folds <- unique(Data$fold)
   
   #loop through the folds and fit/test the full model each time.
-  for(i in 1:length(Ids)){
-    paste0("Fold ", i)
+  for(i in 1:length(folds)){
+    print(paste0("Fold ", i))
     # The way the two-stage model is broken down: 
     # 1: use the training data to fit a linear mixed effects model
     # 2: using the training data, predict the PM using the LME and calculate the residuals
@@ -216,11 +227,11 @@ CV <- function(Data, indData, bw = NA, bw2 = NA){
     # 4: use the test data to predict the PM with the LME model and the residuals from the LME model using the GWR model
     # 5: add the gwr-predicted residuals to the lme-predicted PM values to obtain the final prediction. 
     
-    train_D <- Data[Data$Id != Ids[i],]
-    test_D <- Data[Data$Id == Ids[i] & Data$Day %in% unique(train_D$Day),]
+    train_D <- Data[Data$fold != folds[i],]
+    test_D <- Data[Data$fold == folds[i] & Data$Day %in% unique(train_D$Day),]
     # test_D <- Data[station_folds == i & Data$Day,] #some days are not trained on. 
-    train_ind <- indData[indData$Id != Ids[i],]
-    test_ind <- indData[indData$Id == Ids[i] 
+    train_ind <- indData[indData$fold != folds[i],]
+    test_ind <- indData[indData$fold == folds[i] 
                         & indData$Day %in% unique(train_ind$Day) 
                         & indData$AOD == 0,]
     fold_df <- rbind(fold_df, Two_stage_predictions(train_AOD = train_D, 
@@ -242,13 +253,19 @@ CV <- function(Data, indData, bw = NA, bw2 = NA){
 ################################################################################
 
 start_time <- Sys.time()
-if (pod){
-  leave_one_out <- CV(w_AOD, ind_AOD, bw = NA, bw2 = NA)
+
+if (train_bw){
+  leave_one_out <- CV(w_AOD, ind_AOD, bw = NA, bw2 = NA, spatial_cv)
 } else {
-  leave_one_out <- CV(w_AOD, ind_AOD, bw = 15, bw2 = 13)
+  leave_one_out <- CV(w_AOD, ind_AOD, bw = 15, bw2 = 13, spatial_cv)
 }
-# leave_one_out$stations <- leave_one_out$stations %>% unlist() %>% as.numeric()
-write.csv(leave_one_out, file = "Data/output/grids/2S.csv", row.names = FALSE)
+
+if (spatial_cv){
+  write.csv(leave_one_out, file = "Data/output/CV/2S.csv", row.names = FALSE)
+} else {
+  write.csv(leave_one_out, file = "Data/output/CV/2S_random_CV.csv", row.names = FALSE)
+}
+
 end_time <- Sys.time()
 
 end_time - start_time

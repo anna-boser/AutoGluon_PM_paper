@@ -1,0 +1,446 @@
+---
+title: "CV_figures"
+author: "Anna Boser"
+date: "5/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+knitr::opts_knit$set(root.dir = "~/Documents/GitHub/AutoGluon_PM_paper/")
+```
+
+## Analysis of the crossvalidated values by day, location, etc
+
+```{r}
+# read it in
+cv_df <- read.csv("Data/output/all_cv_preds.csv")
+target_stations <- read.csv("Data/datasets/Small_Ids.csv")[,1]
+```
+
+### Table 1: overall comparison of models: RMSE and R2 for different models with uncertainty. Only for target stations. 
+
+```{r}
+columns <- sort(unique(cv_df$Model))
+r2_df = data.frame(matrix(nrow = 0, ncol = length(columns))) 
+colnames(r2_df) = columns
+rmse_df <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
+colnames(rmse_df) = columns
+nse_df <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
+colnames(nse_df) = columns
+
+for (i in 1:1000){
+  cv_df$rand <- floor(runif(nrow(cv_df), min = 1, max = 10))
+  new <- filter(cv_df, station %in% target_stations, rand != 1) %>% #randomly remove one tenth of the information
+    group_by(Model) %>% 
+    summarise(R2 = cor(PM, PM_pred)^2, 
+              RMSE = mean(rmse), 
+              NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)))
+  r2_df[i,] <- new$R2
+  rmse_df[i,] <- new$RMSE
+  nse_df[i,] <- new$NSE
+}
+```
+
+```{r}
+r2_df <- pivot_longer(r2_df, cols = columns, names_to = "Model", values_to = "r2")
+rmse_df <- pivot_longer(rmse_df, cols = columns, names_to = "Model", values_to = "rmse")
+nse_df <- pivot_longer(nse_df, cols = columns, names_to = "Model", values_to = "nse")
+df <- r2_df
+df$rmse <- rmse_df$rmse
+df$nse <- nse_df$nse
+```
+
+```{r}
+r2_df <- df %>% 
+  group_by(Model) %>%
+  summarise(value = round(mean(r2), 3), 
+            low = round(quantile(r2, probs = .025), 3), 
+            high = round(quantile(r2, probs = .975), 3), 
+            measure = "R2")
+
+r2_df$rescaled_value = (r2_df$value - mean(r2_df$value))/sd(r2_df$value)
+
+rmse_df <- df %>% 
+  group_by(Model) %>%
+  summarise(value = round(mean(rmse), 2), 
+            low = round(quantile(rmse, probs = .025), 3), 
+            high = round(quantile(rmse, probs = .975), 3), 
+            measure = "RMSE")
+
+rmse_df$rescaled_value = ((1/rmse_df$value) - mean(1/rmse_df$value))/sd(1/rmse_df$value)
+
+nse_df <- df %>% 
+  group_by(Model) %>%
+  summarise(value = round(mean(nse), 2), 
+            low = round(quantile(nse, probs = .025), 3), 
+            high = round(quantile(nse, probs = .975), 3), 
+            measure = "NSE")
+
+nse_df$rescaled_value = (nse_df$value - mean(nse_df$value))/sd(nse_df$value)
+
+df1 <- rbind(r2_df, rmse_df, nse_df)
+
+df1$label <- paste0(df1$value, " (", df1$low, ", ", df1$high, ")")
+
+df1$Model <- as.factor(df1$Model)
+ggplot(filter(df1, measure %in% c("R2", "RMSE"))) +
+  geom_tile(aes(x = measure, y = reorder(Model, desc(Model)), fill = (rescaled_value + 3)^4), colour = "white") +
+  scale_fill_gradient2(low = "darkred", mid = "white", high = "steelblue") + 
+  geom_text(aes(x = measure, y = reorder(Model, desc(Model)), label=label)) + 
+  theme_minimal() + 
+  theme(legend.position = "none", 
+        axis.title.y=element_blank(), 
+        axis.title.x=element_blank(), 
+        axis.text=element_text(size=12, face = "bold")) + 
+  scale_x_discrete(position="top")
+```
+
+
+
+Alternative: some nice violin/botplots
+
+```{r}
+by_station <- filter(cv_df, station %in% target_stations) %>% 
+  group_by(Model, station) %>% 
+  summarise(R2 = cor(PM, PM_pred)^2, 
+            RMSE = mean(sqrt((PM-PM_pred)^2)), 
+            NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)),
+            grouping = "Grouped by station") %>% 
+  pivot_longer(cols = c(R2, RMSE, NSE), names_to = "measure")
+
+by_day <- filter(cv_df, station %in% target_stations) %>% 
+  group_by(Model, Day) %>% 
+  summarise(R2 = cor(PM, PM_pred)^2, 
+            RMSE = mean(sqrt((PM-PM_pred)^2)), 
+            NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)),
+            grouping = "Grouped by day") %>% 
+  pivot_longer(cols = c(R2, RMSE, NSE), names_to = "measure")
+
+data = rbind(by_station, by_day)
+data$measure <- factor(data$measure, levels = c("R2","NSE", "RMSE"))
+data$grouping <- factor(data$grouping, levels = c("Grouped by station", "Grouped by day"))
+
+filter(data, measure %in% c("R2", "RMSE")) %>%
+  ggplot(aes(x = Model, y = value)) + 
+  # geom_boxplot(aes(color = Model)) + 
+  geom_violin(aes(fill = Model, color = Model), alpha = .2) + 
+  theme_bw() + 
+  facet_grid(rows = vars(measure), cols = vars(grouping), scales = "free", labeller = ) +
+  theme(legend.position = "none", 
+        axis.text.x = element_text(angle = 30, hjust = 1), 
+        axis.title.y=element_blank(), 
+        axis.title.x=element_blank())
+  # ggtitle("Metrics grouped by station versus by day")
+```
+
+```{r}
+#let's try r2 by day
+day_df = cv_df %>% group_by(Day, Model) %>% 
+  summarise(R2 = cor(PM, PM_pred)^2, 
+            RMSE = mean(sqrt(sum((PM-PM_pred)^2))),
+            NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM)) %>% 
+  pivot_longer(cols = c("R2", "RMSE", "NSE"), names_to = "measure")
+```
+
+```{r}
+day_df$measure <- factor(day_df$measure, levels = c("RMSE","R2","NSE"))
+filter(day_df, Model %in% c("2S", "AutoGluon")) %>% 
+  ggplot(aes(x = mean_PM, y = value, color = Model)) + 
+    geom_point() + 
+    geom_smooth(se = F) + 
+    facet_grid(row = vars(measure), scales = "free") + 
+    theme_bw() + 
+    theme(legend.position = c(.2, .9), 
+          legend.title = element_blank(),
+        #axis.text.x = element_text(angle = 30, hjust = 1), 
+        axis.title.y=element_blank()) + 
+  xlab("Average PM 2.5 by day")
+```
+
+
+
+```{r}
+df2 <- data %>% group_by(grouping, Model, measure) %>% 
+  summarise(low = round(mean(value) - ((1.96*sd(value))/sqrt(n())), 3), 
+            high = round(mean(value) + ((1.96*sd(value))/sqrt(n())), 3), 
+            value = round(themean(value), 3))
+df1$grouping <- "No grouping"
+
+newdf <- rbind(df2, df1)
+newdf$rescaled_value = 1
+newdf$label <- paste0(newdf$value, " (", newdf$low, ", ", newdf$high, ")")
+newdf$grouping <- factor(newdf$grouping, levels = c("No grouping", "Grouped by station", "Grouped by day"))
+```
+
+```{r}
+
+ggplot(filter(newdf, measure %in% c("R2", "NSE"), Model %in% c("2S", "AutoGluon"))) +
+  geom_tile(aes(x = grouping, y = measure, fill = value), colour = "white") +
+  scale_fill_gradient2(low = "darkred", mid = "white", high = "steelblue") + 
+  geom_text(aes(x = grouping, y = measure, label=label)) + 
+  theme_minimal() + 
+  theme(legend.position = "none", 
+        axis.title.y=element_blank(), 
+        axis.title.x=element_blank(), 
+        axis.text=element_text(size=12, face = "bold"), 
+        strip.text = element_text(size=12, face = "bold")) + 
+  scale_x_discrete(position="top") + 
+  facet_grid(rows = vars(Model))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+table1 <- filter(cv_df, station %in% target_stations) %>% 
+  group_by(Model) %>% 
+  summarise(R2 = cor(PM, PM_pred)^2, 
+            RMSE = round(mean(rmse), 2), 
+            RMSE_low = round(RMSE - 1.96*sd(rmse)/(n()-1), 2), 
+            RMSE_high = round(RMSE + 1.96*sd(rmse)/(n()-1), 2))
+table1
+```
+
+```{r}
+table1 <- filter(cv_df, station %in% target_stations) %>% 
+  group_by(Model, station) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = mean(sqrt((PM-PM_pred)^2))) %>% 
+  group_by(Model) %>% 
+  summarise(R2 = round(mean(r2), 2), 
+            R2_low = round(R2 - 1.96*sd(r2), 2), 
+            R2_high = round(R2 + 1.96*sd(r2), 2), 
+            RMSE = round(mean(rmse), 2), 
+            RMSE_low = round(RMSE - 1.96*sd(rmse), 2), 
+            RMSE_high = round(RMSE + 1.96*sd(rmse), 2))
+table1
+```
+
+```{r}
+filter(cv_df, station %in% target_stations) %>% 
+  group_by(Model, station) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = sqrt(mean((PM-PM_pred)^2))) %>% 
+  ggplot(aes(x = Model, y = r2)) + 
+  geom_boxplot(aes(color = Model)) + 
+  geom_violin(aes(fill = Model, color = Model), alpha = .2) + 
+  theme_bw() + 
+  ggtitle("R2 by station")
+
+filter(cv_df, station %in% target_stations) %>% 
+  group_by(Model, station) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = sqrt(mean((PM-PM_pred)^2))) %>% 
+  ggplot(aes(x = Model, y = rmse)) + 
+  geom_boxplot(aes(color = Model)) + 
+  geom_violin(aes(fill = Model, color = Model), alpha = .2) + 
+  theme_bw() + 
+  ggtitle("RMSE by station")
+```
+The outlier station is the station with high PM at two instances. 
+
+
+```{r}
+my_scatterplot <- function(df){
+  m <- lm(PM_pred~PM, data = df)
+  r2 = format(summary(m)$r.squared, digits = 3)
+
+  df %>% ggplot(aes(x = PM, y = PM_pred, alpha = 300)) + 
+  geom_point(aes(color = as.factor(station))) + 
+  geom_smooth(method='lm', formula= y~x) + 
+  facet_grid(~Model) + 
+  geom_text(x = 150, y = 10, label = paste0("R2: ", r2)) 
+}
+```
+
+```{r}
+filter(cv_df, Model %in% c("AutoGluon", "2S"), station %in% target_stations) %>% my_scatterplot
+```
+
+
+
+```{r}
+filter(cv_df, Model %in% c("AutoGluon", "2S"), station %in% target_stations) %>% 
+  ggplot(aes(x = PM, y = PM_pred, alpha = 300)) + 
+  geom_point(aes(color = as.factor(station))) + 
+  geom_smooth(method='lm', formula= y~x) + 
+  facet_grid(~Model) #+ 
+  #geom_text(x = 150, y = 10, label = lm_eqn(y, x), parse = TRUE)
+```
+
+```{r}
+filter(cv_df, Model %in% c("AutoGluon", "2S"), station %in% target_stations, PM<20) %>% 
+  ggplot(aes(x = PM, y = PM_pred, alpha = 300)) + 
+  geom_point(aes(color = as.factor(station))) + 
+  geom_smooth(method='lm', formula= y~x) + 
+  facet_grid(~Model)
+```
+
+
+```{r}
+filter(cv_df, Model %in% c("AutoGluon", "2S"), station %in% target_stations, PM>20) %>% 
+  ggplot(aes(x = PM, y = PM_pred, alpha = 300)) + 
+  geom_point(aes(color = as.factor(station))) + 
+  geom_smooth(method='lm', formula= y~x) + 
+  facet_grid(~Model)
+```
+
+
+
+```{r}
+# plot of rmse by actual PM value by model
+ggplot(cv_df, aes(x = PM, y = rmse, color = Model)) + geom_point() + geom_smooth(se = F)
+
+```
+
+```{r}
+#let's try r2 by day
+day_df = cv_df %>% group_by(Day, Model) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = mean(sqrt(sum((PM-PM_pred)^2))),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM))
+ggplot(day_df, aes(x = mean_PM, y = rmse, color = Model)) + geom_point() + geom_smooth(se = F)
+```
+
+```{r}
+ggplot(day_df, aes(x = mean_PM, y = r2, color = Model)) + geom_point() + geom_smooth(se = F)
+```
+
+```{r}
+ggplot(day_df, aes(x = mean_PM, y = r2, color = Model)) + geom_point() + geom_smooth(se = F)
+```
+
+
+```{r}
+ggplot(day_df, aes(x = log(sd_PM), y = r2, color = Model)) + geom_point() + geom_smooth(se = F)
+ggplot(day_df, aes(x = log(sd_PM), y = rmse, color = Model)) + geom_point() + geom_smooth(se = F)
+```
+
+```{r}
+# boxplot of rmse, bias, and r2 by model. 
+station_df = cv_df %>% group_by(station, Model) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = mean(sqrt(sum((PM-PM_pred)^2))),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM), 
+            bias = PM_pred - PM)
+ggplot(station_df, aes(x = Model, y = r2)) + geom_boxplot()
+ggplot(station_df, aes(x = Model, y = rmse)) + geom_boxplot()
+ggplot(station_df, aes(x = Model, y = bias)) + geom_violin()
+```
+
+
+```{r}
+day_df = cv_df %>% group_by(Day, Model) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = mean(sqrt(sum((PM-PM_pred)^2))),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM), 
+            bias = PM_pred - PM)
+ggplot(day_df, aes(x = Model, y = r2)) + geom_boxplot()
+ggplot(day_df, aes(x = Model, y = rmse)) + geom_boxplot()
+ggplot(day_df, aes(x = Model, y = bias)) + geom_violin()
+
+```
+
+```{r}
+days = cv_df %>% group_by(Day) %>% 
+  summarise(mean_PM = mean(PM))
+high_pm_days <- days$Day[days$mean_PM>=15]
+# there are only 24 high pm days!
+cv_df$high_pm_day <- cv_df$Day %in% high_pm_days
+
+station_df = cv_df %>% group_by(station, Model, high_pm_day) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2, 
+            rmse = mean(sqrt(sum((PM-PM_pred)^2))),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM), 
+            bias = PM_pred - PM)
+ggplot(station_df, aes(x = Model, y = r2, col = high_pm_day)) + geom_boxplot(position = 'dodge')
+ggplot(station_df, aes(x = Model, y = rmse, col = high_pm_day)) + geom_boxplot(position = 'dodge')
+ggplot(station_df, aes(x = Model, y = bias, col = high_pm_day)) + geom_violin(position = 'dodge')
+```
+
+```{r}
+days = cv_df %>% group_by(Day) %>% 
+  summarise(mean_PM = mean(PM))
+high_pm_days <- days$Day[days$mean_PM>=15]
+# there are only 24 high pm days!
+cv_df$high_pm_day <- cv_df$Day %in% high_pm_days
+
+station_df = cv_df %>% group_by(station, Model, high_pm_day) %>% 
+  summarise(nse = 1 - sum((PM_pred-PM)^2)/sum((PM-mean(PM))^2))
+station_df %>% ggplot(aes(x = Model, y = nse, col = high_pm_day)) + geom_boxplot(position = 'dodge')
+```
+```{r}
+day_df = cv_df %>% group_by(Day, Model) %>% 
+  summarise(nse = 1 - sum((PM_pred-PM)^2)/sum((PM-mean(PM))^2))
+ggplot(day_df, aes(x = Model, y = nse)) + geom_boxplot()
+```
+
+```{r}
+station_df = cv_df %>% filter(Model %in% c("2S", "AutoGluon"))%>% group_by(Day, Model) %>% 
+  summarise(nse = 1 - sum((PM_pred-PM)^2)/sum((PM-mean(PM))^2))
+ggplot(station_df, aes(x = Model, y = nse)) + geom_boxplot()
+```
+```{r}
+cv_df$high_pm <- cv_df$PM > 20
+model_df <- cv_df %>% group_by(Model, high_pm) %>% 
+  summarise(nse = mean(1 - sum((PM_pred-PM)^2)/sum((PM-mean(PM))^2)))
+# model_df %>% ggplot(aes(x = Model, y = nse, col = high_pm)) + geom_boxplot(position = 'dodge') 
+model_df %>% filter(high_pm == TRUE)
+model_df %>% filter(high_pm == FALSE)
+```
+
+```{r}
+
+model_df <- cv_df %>% group_by(Model) %>% 
+  summarise(nse = mean(1 - sum((PM_pred-PM)^2)/sum((PM-mean(PM))^2)))
+# model_df %>% ggplot(aes(x = Model, y = nse, col = high_pm)) + geom_boxplot(position = 'dodge') 
+model_df
+```
+
+```{r}
+cv_df$high_pm <- cv_df$PM > 20
+model_df <- cv_df %>% group_by(station, Model, high_pm) %>% 
+  summarise(r2 = cor(PM, PM_pred)^2)
+model_df %>% ggplot(aes(x = Model, y = r2, col = high_pm)) + geom_boxplot(position = 'dodge') 
+model_df %>% filter(high_pm == TRUE)
+model_df %>% filter(high_pm == FALSE)
+```
+
+```{r}
+ggplot(cv_df) %>% geom_point(aes(x = PM, y = PM_pred))
+```
+
+
+
+```{r}
+cv_df %>% filter(Model %in% c("2S", "AutoGluon"), station == 24661) %>% 
+  ggplot() + 
+  geom_line(aes(x = Day, y = PM_pred, color = Model)) + 
+  geom_line(aes(x = Day, y = PM))
+```
+

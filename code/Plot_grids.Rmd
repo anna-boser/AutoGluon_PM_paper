@@ -1,0 +1,466 @@
+---
+title: "Plot_grids"
+author: "Anna Boser"
+date: "5/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tmap)    # for static and interactive maps
+library(leaflet) # for interactive maps
+library(ggplot2) # tidyverse data visualization package
+library(sp)
+library(ggmap)
+library(raster)
+library(tidyverse)
+library(reshape2)
+library(plotly)
+library(sf)
+library(scales)
+library(ggrepel)
+library(data.table)
+library(ggsn)
+library(rgdal)
+library(rgeos)
+library(maptools)
+
+knitr::opts_knit$set(root.dir = "~/Documents/GitHub/AutoGluon_PM_paper/")
+register_google(key = "AIzaSyB-a21yIUu0c-9ZDUpYjy1J2lbGsit_58k", write = TRUE)
+```
+
+
+Figures: 
+* 1. the full model 3 days : Grid  -> 9 plots
+* 2. the sub-models 3 days : Point -> 9 plots
+* 3. Map CV points : R squared values -> 3 plots
+
+
+* CV table (overall)
+
+# 1. Easiest: Map CV points: R squared values 
+
+
+```{r}
+Data <- read.csv(file = "Data/datasets/Train.csv")
+
+station.loc <- Data %>% 
+              group_by(Id) %>% 
+              filter(row_number()==1) %>% 
+              select(Id, Lat, Lon)
+
+colnames(station.loc) <- c("station", "y", "x")
+
+# makesp <- function(data){
+#   temp <- left_join(data, station.loc, by = "stations", copy = FALSE)
+#   temp$R2p <- temp$R2 * 100
+#   return (SpatialPointsDataFrame(coords = cbind(temp$x, temp$y), data = temp))
+# }
+
+makedf <- function(data){
+  temp <- left_join(data, station.loc, by = "station", copy = FALSE)
+  temp$R2p <- temp$R2 * 100
+  return (temp)
+  
+}
+
+stations_and_r2 <- function(cv_df){
+  station_df = cv_df %>% group_by(station, Model) %>% 
+  summarise(R2 = cor(PM, PM_pred)^2, 
+            RMSE = mean(rmse), 
+            RMSE_corrected = mean(rmse_corrected), 
+            RMSE_divided = mean(rmse/PM), 
+            bias = mean(PM_pred - PM))
+  return(station_df)
+}
+
+# cv_df <- read.csv(here("Data", "output", "all_cv_preds.csv"))
+cv_df1 <- read.csv("Data/output/all_cv_preds.csv")
+m = lm(rmse ~ PM, data = cv_df1) #+ I(PM^2) + I(PM^3)+ I(PM^4)
+cv_df1$rmse_corrected = m$residuals
+cv_df <- stations_and_r2(cv_df1)
+station_cvs <- makedf(cv_df)
+
+target_stations <- read.csv("Data/datasets/Small_Ids.csv")[,1]
+```
+
+```{r}
+areas <- data.frame(x1=c(-123.5,-122.8), x2=c(-120.8,-121.7), y1=c(36.8,37.2), y2=c(39,38.3), t=c('Train Area','Test Area'))
+
+# map of study area
+center = c(lon = mean(data$x), lat = mean(data$y))
+baseMap = ggmap(get_map(center=center, scale=2, zoom=8, source = "google")) # 
+baseMap + geom_point(aes(x=x, y=y, color = "Monitoring station"), data = station_cvs, size=1.5) + 
+   geom_rect(mapping=aes(xmin=c(-123.5), xmax=c(-120.8), ymin=c(36.8), ymax=c(39), color = "Data Training Area"), alpha = 0) +
+   geom_rect(mapping=aes(xmin=c(-122.8), xmax=c(-121.7), ymin=c(37.2), ymax=c(38.3), color = "Target Prediction Area"), alpha = 0) + 
+  scale_color_manual("", values = c("orange", "black", "red")) +
+  theme_bw() + 
+  ylab("Latitude") +
+  xlab("Longitude") + 
+  theme(axis.title = element_blank(), 
+        axis.text = element_blank(), 
+        axis.ticks = element_blank(), 
+        legend.position = "none") 
+
+ggsave(paste0("figures/study_area.png"))
+```
+
+
+
+```{r}
+#register_google(key = "[Your Key]", write = TRUE)
+plotR2 <- function(data, basemap="hybrid"){ 
+  center = c(lon = mean(data$x)-.05, lat = mean(data$y)-.1)
+  baseMap = ggmap(get_map(center=center, scale=2, zoom=9, source = "google")) # 
+  baseMap + geom_point(aes(x=x, y=y, fill = R2), data=data, pch=21, size=4) +
+    scale_fill_gradient2(low = "darkred", mid = "white", high = "dodgerblue", midpoint = .8, limits = c(.6, 1)) + 
+    # ggsn::scalebar(data = data) +
+        # geom_text_repel(aes(x=x, y=y, label = round(R2, 2)),
+        #              size = 3,
+        #              data = data) +
+    # scale_colour_gradientn(colours = c("red", "yellow", "green", "cyan"), values = c(0, 60, 90, 100)) + 
+    # geom_rect(data=areas, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2, color=t)) + 
+    geom_rect(mapping=aes(xmin=c(-123.5), xmax=c(-120.8), ymin=c(36.8), ymax=c(39)), color = "orange", alpha = 0) +
+    geom_rect(mapping=aes(xmin=c(-122.8), xmax=c(-121.7), ymin=c(37.2), ymax=c(38.3)), color = "red", alpha = 0) + 
+    ylab("Latitude") +
+    xlab("Longitude") + 
+    theme(axis.title = element_blank(), 
+      axis.text = element_blank(), 
+      axis.ticks = element_blank(), 
+      legend.position = c(.9, .5))
+}
+```
+
+
+```{r}
+dir.create("figures/CV_map")
+dir.create("figures/CV_map/R2")
+for (model in c("2S", "AutoGluon")){
+  print(plotR2(filter(station_cvs, Model == model, station %in% target_stations)))
+  ggsave(paste0("figures/CV_map/R2/", model, "_CV_map.png"))
+}
+```
+
+```{r}
+#register_google(key = "[Your Key]", write = TRUE)
+plotRMSE <- function(data, basemap="hybrid"){ 
+  center = c(lon = mean(data$x)-.05, lat = mean(data$y)-.1)
+  baseMap = ggmap(get_map(center=center, scale=2, zoom=9, source = "google")) # 
+  baseMap + geom_point(aes(x=x, y=y, fill = RMSE), data=data, pch=21, size=4) +
+    scale_fill_gradient2(low = "dodgerblue", mid = "white", high = "darkred", midpoint = 3, limits = c(1.5, 4.5)) + 
+    # ggsn::scalebar(data = data) +
+        # geom_text_repel(aes(x=x, y=y, label = round(R2, 2)),
+        #              size = 3,
+        #              data = data) +
+    # scale_colour_gradientn(colours = c("red", "yellow", "green", "cyan"), values = c(0, 60, 90, 100)) + 
+    # geom_rect(data=areas, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2, color=t)) + 
+    geom_rect(mapping=aes(xmin=c(-123.5), xmax=c(-120.8), ymin=c(36.8), ymax=c(39)), color = "orange", alpha = 0) +
+    geom_rect(mapping=aes(xmin=c(-122.8), xmax=c(-121.7), ymin=c(37.2), ymax=c(38.3)), color = "red", alpha = 0) + 
+    ylab("Latitude") +
+    xlab("Longitude") + 
+    theme(axis.title = element_blank(), 
+      axis.text = element_blank(), 
+      axis.ticks = element_blank(), 
+      legend.position = c(.9, .5))
+}
+```
+
+
+```{r}
+dir.create("figures/CV_map/RMSE")
+for (model in c("2S", "AutoGluon")){
+  print(plotRMSE(filter(station_cvs, Model == model, station %in% target_stations)))
+  ggsave(paste0("figures/CV_map/RMSE/", model, "_CV_map.png"))
+}
+```
+
+```{r}
+station_cvs$Bias = station_cvs$bias
+#register_google(key = "[Your Key]", write = TRUE)
+plotBias <- function(data, basemap="hybrid"){ 
+  center = c(lon = mean(data$x)-.05, lat = mean(data$y)-.1)
+  baseMap = ggmap(get_map(center=center, scale=2, zoom=9, source = "google")) # 
+  baseMap + geom_point(aes(x=x, y=y, fill = Bias), data=data, pch=21, size=4) +
+    scale_fill_gradient2(low = "purple", mid = "white", high = "forestgreen", midpoint = 0, limits = c(-4.5, 4.5)) + 
+    # ggsn::scalebar(data = data) +
+        # geom_text_repel(aes(x=x, y=y, label = round(R2, 2)),
+        #              size = 3,
+        #              data = data) +
+    # scale_colour_gradientn(colours = c("red", "yellow", "green", "cyan"), values = c(0, 60, 90, 100)) + 
+    # geom_rect(data=areas, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2, color=t)) + 
+    geom_rect(mapping=aes(xmin=c(-123.5), xmax=c(-120.8), ymin=c(36.8), ymax=c(39)), color = "orange", alpha = 0) +
+    geom_rect(mapping=aes(xmin=c(-122.8), xmax=c(-121.7), ymin=c(37.2), ymax=c(38.3)), color = "red", alpha = 0) + 
+    ylab("Latitude") +
+    xlab("Longitude") + 
+    theme(axis.title = element_blank(), 
+      axis.text = element_blank(), 
+      axis.ticks = element_blank(), 
+      legend.position = c(.9, .5))
+}
+```
+
+
+```{r}
+dir.create("figures/CV_map/Bias")
+for (model in c("2S", "AutoGluon")){
+  print(plotBias(filter(station_cvs, Model == model, station %in% target_stations)))
+  ggsave(paste0("figures/CV_map/Bias/", model, "_CV_map.png"))
+}
+```
+
+```{r}
+t.test(filter(station_cvs, Model == "2S", station %in% target_stations)$RMSE, 
+       filter(station_cvs, Model == "AutoGluon", station %in% target_stations)$RMSE, paired = TRUE)
+t.test(filter(station_cvs, Model == "2S", station %in% target_stations)$R2, 
+       filter(station_cvs, Model == "AutoGluon", station %in% target_stations)$R2, paired = TRUE)
+t.test(filter(station_cvs, Model == "2S", station %in% target_stations)$Bias, 
+       filter(station_cvs, Model == "AutoGluon", station %in% target_stations)$Bias, paired = TRUE)
+```
+
+
+
+```{r}
+for (model in c("2S", "AutoGluon")){
+  print(paste("Bias:", var(filter(station_cvs, Model == model, station %in% target_stations)$Bias)))
+  print(paste("R2:", var(filter(station_cvs, Model == model, station %in% target_stations)$R2)))
+  print(paste("RMSE:", var(filter(station_cvs, Model == model, station %in% target_stations)$RMSE)))
+}
+```
+
+
+
+
+
+```{r}
+# plot RMSE
+plotRMSE <- function(data, basemap="hybrid"){ 
+  center = c(lon = mean(data$x), lat = mean(data$y))
+  baseMap = ggmap(get_map(center=center, scale=2, zoom=8, source = "google")) # 
+  baseMap + geom_point(aes(x=x, y=y, fill = RMSE), data=data, pch=21, size=4) +
+    scale_fill_gradient2(low = "dodgerblue", mid = "white", high = "darkred", midpoint = 3, limits = c(1.7, 11)) + 
+    # ggsn::scalebar(data = data) +
+        # geom_text_repel(aes(x=x, y=y, label = round(R2, 2)),
+        #              size = 3,
+        #              data = data) +
+    # scale_colour_gradientn(colours = c("red", "yellow", "green", "cyan"), values = c(0, 60, 90, 100)) + 
+    # geom_rect(data=areas, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2, color=t)) + 
+    geom_rect(mapping=aes(xmin=c(-123.5), xmax=c(-120.8), ymin=c(36.8), ymax=c(39)), color = "orange", alpha = 0) +
+    geom_rect(mapping=aes(xmin=c(-122.8), xmax=c(-121.7), ymin=c(37.2), ymax=c(38.3)), color = "red", alpha = 0) + 
+    ylab("Latitude") +
+    xlab("Longitude") + 
+    ggtitle(data$Model[1])
+}
+
+dir.create("figures/CV_map")
+for (model in unique(station_cvs$Model)[1]){
+  print(plotRMSE(filter(station_cvs, Model == model), "toner-lite"))
+  ggsave(paste0("figures/CV_map/", model, "_CV_map.png"))
+}
+```
+
+```{r}
+# plot corrected RMSE
+plotCV <- function(data, basemap="hybrid"){ 
+  center = c(lon = mean(data$x), lat = mean(data$y))
+  baseMap = ggmap(get_map(center=center, scale=2, zoom=8, source = "google")) # 
+  baseMap + geom_point(aes(x=x, y=y, fill = bias), data=data, pch=21, size=4) +
+    scale_fill_gradient2(low = "dodgerblue", mid = "white", high = "darkred", midpoint = 0, limits = c(-15, 15)) + 
+    # ggsn::scalebar(data = data) +
+        # geom_text_repel(aes(x=x, y=y, label = round(R2, 2)),
+        #              size = 3,
+        #              data = data) +
+    # scale_colour_gradientn(colours = c("red", "yellow", "green", "cyan"), values = c(0, 60, 90, 100)) + 
+    # geom_rect(data=areas, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2, color=t)) + 
+    geom_rect(mapping=aes(xmin=c(-123.5), xmax=c(-120.8), ymin=c(36.8), ymax=c(39)), color = "orange", alpha = 0) +
+    geom_rect(mapping=aes(xmin=c(-122.8), xmax=c(-121.7), ymin=c(37.2), ymax=c(38.3)), color = "red", alpha = 0) + 
+    ylab("Latitude") +
+    xlab("Longitude") + 
+    ggtitle(data$Model[1])
+}
+
+dir.create("figures/CV_map")
+for (model in unique(station_cvs$Model)[1]){
+  print(plotCV(filter(station_cvs, Model == model), "toner-lite"))
+  ggsave(paste0("figures/CV_map/", model, "_CV_map.png"))
+}
+
+```
+
+# 2. Full model 3 days
+
+
+```{r}
+grid <- st_read("Data/datasets/Modeling_Grid/Modeling_Grid.shp")
+rast <- raster(nrows = 244, ncols = 236, xmn = -123.5, xmx = -120.7984, ymn = 36.8, ymx = 39)
+gridRaster <- rasterize(grid, rast)
+grid <- as.data.frame(gridRaster, xy = TRUE) %>% dplyr::select(x,y,layer_Id)
+colnames(grid) <- c('x','y','Id')
+
+# max_day <- 286
+# med_day <- 135
+
+# plot_grid <- function(table){
+#   r <- left_join(r, table, by='Id', copy = FALSE)
+#   center <- c(mean(table$x), mean(table$y))
+#   baseMap = ggmap(get_map(center=center, scale=2, zoom=8, maptype ="roadmap", source = "google"), base_layer=ggplot(r, aes(x,y)))
+#   
+#   plotPredictions <- function(column, title, whichday){
+#   p <- baseMap  +
+#     geom_raster(aes(fill = column)) + 
+#     scale_fill_gradientn(
+#     colours = c("blue","green", "yellow", "orange", "red"),
+#     values = rescale(c(-124.67 , 0, 16, 50, 200,  422.63)),
+#     limits = c(-120,400)
+#   ) +
+#     theme_bw() +
+#       labs(x="West to East",
+#          y="South to North",
+#          title = title,
+#          fill = whichday)
+#   ggplotly(p)
+#   }
+#   
+#   plotPredictions(r$Day286, "October 13", "Predicted PM")
+#   
+# }
+```
+
+```{r}
+# list all the files in a certain directory
+avg <- list.files(path = "Data/output/grids/avg", full.names = TRUE)
+high <- list.files(path = "Data/output/grids/high", full.names = TRUE)
+med <- list.files(path = "Data/output/grids/med", full.names = TRUE)
+```
+
+
+
+
+```{r}
+CA <- readOGR("Data/california/california.shp")
+CS <- fortify(CA)
+#make a function that takes a file name and plots its contents with the model name in the title
+plot_file <- function(file){
+  table <- read.csv(file)
+  model_name <- str_extract(file, regex("(?<=/)[A-z]+(?=_)"))
+  day <- str_extract(file, regex("(?<=_)[A-z]+(?=.csv)"))
+  
+  r <- left_join(grid, table, by='Id', copy = FALSE)
+  center <- c(mean(r$x), mean(r$y)-.01)
+  baseMap = ggmap(get_map(center=center, scale=2, zoom=9, maptype ="toner-lite", source = "stamen"))
+  
+  plotPredictions <- function(title){
+  p <- baseMap  +
+    geom_tile(data = r, aes(x = x, y = y, fill = X0), alpha = 0.05) + 
+    scale_fill_gradientn(
+    colours = c("blue", "forestgreen", "green", "yellow", "orange", "red", "darkred"),
+    values = rescale(c(-10, 0, 2, 5, 9, 15, 30, 50)),
+    limits = c(-10,50)
+  ) +
+    theme_bw() +
+      labs(x="",
+         y="",
+         title = title, 
+         fill = "PM 2.5") + 
+    geom_polygon(data = CA, aes(long, lat))
+  ggplotly(p)
+  }
+  
+  plot <- plotPredictions(paste(day, model_name))
+  paste(plot)
+  return(plot)
+  
+}
+```
+
+```{r}
+# I only really want 2S and AutoGluon
+avg_files <- lapply(avg[c(2,7)], plot_file)
+
+```
+
+
+
+
+```{r}
+table <- read.csv("Data/output/grids/avg/TwoStage_Avg.csv")
+r <- left_join(grid, table, by='Id', copy = FALSE)
+
+```
+
+```{r}
+file <- "Data/output/grids/avg/TwoStage_Avg.csv"
+  table <- read.csv(file)
+  model_name <- str_extract(file, regex("(?<=/)[A-z]+(?=_)"))
+  
+  r <- left_join(grid, table, by='Id', copy = FALSE)
+  center <- c(mean(r$x), mean(r$y)-.1)
+  baseMap = ggmap(get_map(center=center, scale=2, zoom=9, maptype ="roadmap", source = "google"), base_layer=ggplot(r, aes(x,y)))
+  
+  plotPredictions <- function(column, title, whichday){
+  p <- baseMap  +
+    geom_raster(aes(fill = column, alpha = .0002)) + 
+    scale_fill_gradientn(
+    colours = c("blue","green", "yellow", "orange", "red"),
+    values = rescale(c(-124.67 , 0, 16, 50, 200,  422.63)),
+    limits = c(-120,400)
+  ) +
+    theme_bw() +
+      labs(x="West to East",
+         y="South to North",
+         title = title,
+         fill = whichday)
+  ggplotly(p)
+  }
+```
+
+```{r}
+plotPredictions(r$X0, "October 13", model_name)
+```
+
+
+
+
+```{r cache=TRUE}
+grid <- st_read(here::here("Data", "Modeling_Grid", "Modeling_Grid.shp"))
+rast <- raster(nrows = 244, ncols = 236, xmn = -123.5, xmx = -120.7984, ymn = 36.8, ymx = 39)
+gridRaster <- rasterize(grid, rast)
+r <- as.data.frame(gridRaster, xy = TRUE) %>% dplyr::select(x,y,layer_Id)
+colnames(r) <- c('x','y','Id')
+r <- left_join(r, gwrF, by='Id', copy = FALSE)
+r <- left_join(r, splineF, by='Id', copy=FALSE, suffix = c(".G", ".S"))
+r <- left_join(r, krigingF, by='Id', copy=FALSE, suffix = c("", ".K"))
+r <- left_join(r, kaF, by='Id', copy=FALSE, suffix = c("", ".Ka"))
+center <- c(mean(gwr$x), mean(gwr$y))
+baseMap = ggmap(get_googlemap(center=center, scale=2, zoom=8, maptype ="roadmap"), base_layer=ggplot(r, aes(x,y)))
+plotPredictions <- function(column, title, whichday){
+  p <- baseMap  +
+    geom_raster(aes(fill = column)) + 
+    scale_fill_gradientn(
+    colours = c("blue","green", "yellow", "orange", "red"),
+    values = rescale(c(-124.67 , 0, 16, 50, 200,  422.63)),
+    limits = c(-120,400)
+  ) +
+    theme_bw() +
+      labs(x="West to East",
+         y="South to North",
+         title = title,
+         fill = whichday)
+  ggplotly(p)
+}
+plotPredictions(r$Day274.G, "LME + GWR PM prediction - October 1st", "predicted PM")
+plotPredictions(r$Day286.G, "LME + GWR PM predictions - October 13th", "predicted PM")
+plotPredictions(r$Day304.G, "LME + GWR PM predictions - October 31st", "predicted PM")
+plotPredictions(r$Day274.S, "LME + Spline PM predictions - October 1st", "predicted PM")
+plotPredictions(r$Day286.S, "LME + Spline PM predictions - October 13th", "predicted PM")
+plotPredictions(r$Day304.S, "LME + Spline PM predictions - October 31st", "predicted PM")
+plotPredictions(r$Day274.K, "LME + SpatioTemporal Kriging  PM predictions - October 1st", "predicted PM")
+plotPredictions(r$Day286.K, "LME + SpatioTemporal Kriging PM predictions - October 13th", "predicted PM")
+plotPredictions(r$Day304.K, "LME + SpatioTemporal Kriging PM predictions - October 31st", "predicted PM")
+plotPredictions(r$Day274.Ka, "LME + Annual Average Kriging PM predictions - October 1st", "predicted PM")
+plotPredictions(r$Day286.Ka, "LME + Annual Average Kriging PM predictions - October 13th", "predicted PM")
+plotPredictions(r$Day304.Ka, "LME + Annual Average Kriging PM predictions - October 31st", "predicted PM")
+```
+
+
+
+
