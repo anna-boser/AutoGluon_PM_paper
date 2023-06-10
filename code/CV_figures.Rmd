@@ -169,7 +169,7 @@ filter(day_df, Model %in% c("2S", "AutoGluon")) %>%
 df2 <- data %>% group_by(grouping, Model, measure) %>% 
   summarise(low = round(mean(value) - ((1.96*sd(value))/sqrt(n())), 3), 
             high = round(mean(value) + ((1.96*sd(value))/sqrt(n())), 3), 
-            value = round(themean(value), 3))
+            value = round(mean(value), 3))
 df1$grouping <- "No grouping"
 
 newdf <- rbind(df2, df1)

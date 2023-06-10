@@ -1,0 +1,504 @@
+---
+title: "CV_figures_june2022"
+author: "Anna Boser"
+date: '2022-06-08'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(latex2exp)
+knitr::opts_knit$set(root.dir = "~/Documents/GitHub/AutoGluon_PM_paper/")
+```
+
+# Figure 1: different R2s
+```{r}
+y = c(1,2,3,4)
+y_hat = c(1.25, 1.75, 2.5, 4.5)
+
+base <- data.frame(y, y_hat, group = "base")
+intercept <- data.frame(y, y_hat = y_hat - 1, group = "intercept")
+negative <- data.frame(y, y_hat = rev(y_hat), group = "negative")
+one_to_one <- data.frame(y, y_hat = y, group = "one_to_one")
+
+model_df <- rbind(base, intercept, negative)
+```
+
+Figure 1a
+```{r}
+ggplot(filter(model_df, group == "base"), aes(x = y_hat, y = y, color = group)) + 
+  geom_abline(intercept = 2.5, slope = 0, color = "grey50", size = .5) + # mean line
+  geom_point() + # points
+  geom_smooth(method = "lm", se = FALSE) + # best fit lines
+  geom_abline(intercept = 0, slope = 1, linetype = "dotted", color = "black", size = 1) + # one-to-one
+  theme_classic() + 
+  geom_point(data = one_to_one, aes(x = y, y = y_hat), color = "grey50") + # one-to-one dots
+  theme(legend.position = "none", 
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  xlim(0, 5) + 
+  ylim(0, 5) + 
+  
+  geom_segment(aes(y=y[1],yend=y[1],x=y_hat[1],xend=y[1]), linetype = "dotted") +
+  geom_segment(aes(y=y[2],yend=y[2],x=y_hat[2],xend=y[2]), linetype = "dotted") +
+  geom_segment(aes(y=y[3],yend=y[3],x=y_hat[3],xend=y[3]), linetype = "dotted") +
+  geom_segment(aes(y=y[4],yend=y[4],x=y_hat[4],xend=y[4]), linetype = "dotted") +
+
+  geom_segment(aes(x=y[1],xend=y[1],y=y[1],yend=2.5), linetype = "dotted", color = "grey50") +
+  geom_segment(aes(x=y[2],xend=y[2],y=y[2],yend=2.5), linetype = "dotted", color = "grey50") +
+  geom_segment(aes(x=y[3],xend=y[3],y=y[3],yend=2.5), linetype = "dotted", color = "grey50") +
+  geom_segment(aes(x=y[4],xend=y[4],y=y[4],yend=2.5), linetype = "dotted", color = "grey50") +
+  
+  ylab("Observations") + 
+  xlab("Predictions")
+  
+  
+```
+
+Figure 1b
+```{r}
+ggplot(model_df, aes(x = y_hat, y = y, color = group)) + 
+  # geom_abline(intercept = 2.5, slope = 0, color = "grey50", linetype = "dashed") + # mean line
+  geom_point() + # points
+  geom_smooth(method = "lm", se = FALSE) + # best fit lines
+  geom_abline(intercept = 0, slope = 1, linetype = "dotted", color = "black", size = 1) + # one-to-one
+  theme_classic() + 
+  # geom_point(data = one_to_one, aes(x = y, y = y_hat), color = "grey50", size = 2) + # one-to-one dots
+  theme(legend.position = "none", 
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())  +
+  xlim(0, 5) + 
+  ylim(0, 5) + 
+  ylab("Observations") + 
+  xlab("Predictions")
+  
+```
+
+# Simpson's paradox example figure
+```{r}
+sp <- data.frame(group = as.factor(c(1,1,1,1, 2,2,2,2)), x = c(1,2,3,4,5,6,7,8), y = c(5,6,7,8,1,2,3,4))
+ggplot(sp, aes(x = x, y =y)) + 
+  geom_smooth(method = 'lm', se = F, color = "black", linetype = "dotted") +
+  geom_point(aes(col = group), size = 4, alpha = .5) + 
+  geom_smooth(method = 'lm', aes(col = group)) +
+  xlim(c(0.5,8.5)) + 
+  ylim(c(0.5,8.5)) + 
+  theme_classic() + 
+  theme(legend.position = "none", 
+        aspect.ratio=1)
+
+# get the colors for annotation
+library(scales)
+hue_pal()(2)
+```
+
+
+    theme(legend.position = c(.2, .9), 
+          legend.title = element_blank(),# Figure 5
+
+```{r}
+cv_df <- read.csv("Data/output/all_cv_preds.csv")
+target_stations <- read.csv("Data/datasets/Small_Ids.csv")[,1]
+```
+
+```{r}
+make_f4_df <- function(cv_df, station_subs = TRUE){
+  
+  if (station_subs == TRUE){
+    cv_df <- filter(cv_df, station %in% target_stations)
+  } 
+  
+  ################################
+  # Bootstrap to get CIs for the unisolated r2 values
+  
+  #  make empty dataframes with each model as a column
+  columns <- sort(unique(cv_df$Model))
+  r2_df = data.frame(matrix(nrow = 0, ncol = length(columns))) 
+  colnames(r2_df) = columns
+  rmse_df <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
+  colnames(rmse_df) = columns
+  nse_df <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
+  colnames(nse_df) = columns
+  
+  # fill the dataframes with 1000 bootstrapped r2, rmse, and nse values
+  for (i in 1:1000){
+    cv_df$rand <- floor(runif(nrow(cv_df), min = 0, max = 10)) # randomly partition the cv_df values into 10 different groups
+    new <- filter(cv_df, station %in% target_stations, rand != 1) %>% #randomly remove one tenth of the information
+      group_by(Model) %>% 
+      summarise(R2 = cor(PM, PM_pred)^2, 
+                RMSE = mean(rmse), 
+                NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)))
+    r2_df[i,] <- new$R2
+    rmse_df[i,] <- new$RMSE
+    nse_df[i,] <- new$NSE
+  }
+
+  # change the format and combine dataframes into one big bootstrapped dataset
+  r2_df <- pivot_longer(r2_df, cols = columns, names_to = "Model", values_to = "r2")
+  rmse_df <- pivot_longer(rmse_df, cols = columns, names_to = "Model", values_to = "rmse")
+  nse_df <- pivot_longer(nse_df, cols = columns, names_to = "Model", values_to = "nse")
+  df <- r2_df
+  df$rmse <- rmse_df$rmse
+  df$nse <- nse_df$nse
+  
+  ################################  
+  # create the dataset for metrics grouped by station and day
+  
+  by_station <- cv_df %>% 
+    group_by(Model, station) %>% 
+    summarise(R2 = cor(PM, PM_pred)^2, 
+              RMSE = mean(sqrt((PM-PM_pred)^2)), 
+              NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)),
+              grouping = "Grouped by station") %>% 
+    pivot_longer(cols = c(R2, RMSE, NSE), names_to = "measure")
+  
+  by_day <- cv_df %>% 
+    group_by(Model, Day) %>% 
+    summarise(R2 = cor(PM, PM_pred)^2, 
+              RMSE = mean(sqrt((PM-PM_pred)^2)), 
+              NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)),
+              grouping = "Grouped by day") %>% 
+    pivot_longer(cols = c(R2, RMSE, NSE), names_to = "measure")
+  
+  data = rbind(by_station, by_day)
+  data$measure <- factor(data$measure, levels = c("R2","NSE", "RMSE"))
+  data$grouping <- factor(data$grouping, levels = c("Grouped by station", "Grouped by day"))
+  
+  ################################  
+  # Back to the unisolated stuff, get the mean and CI from the bootstrapped datasets
+  r2_df <- df %>% 
+    group_by(Model) %>%
+    summarise(value = round(mean(r2), 3), 
+              low = round(quantile(r2, probs = .025), 3), 
+              high = round(quantile(r2, probs = .975), 3), 
+              measure = "R2")
+  
+  r2_df$rescaled_value = (r2_df$value - mean(r2_df$value))/sd(r2_df$value)
+  
+  rmse_df <- df %>% 
+    group_by(Model) %>%
+    summarise(value = round(mean(rmse), 2), 
+              low = round(quantile(rmse, probs = .025), 3), 
+              high = round(quantile(rmse, probs = .975), 3), 
+              measure = "RMSE")
+  
+  rmse_df$rescaled_value = ((1/rmse_df$value) - mean(1/rmse_df$value))/sd(1/rmse_df$value)
+  
+  nse_df <- df %>% 
+    group_by(Model) %>%
+    summarise(value = round(mean(nse), 2), 
+              low = round(quantile(nse, probs = .025), 3), 
+              high = round(quantile(nse, probs = .975), 3), 
+              measure = "NSE")
+  
+  nse_df$rescaled_value = (nse_df$value - mean(nse_df$value))/sd(nse_df$value)
+  
+  df1 <- rbind(r2_df, rmse_df, nse_df)
+  
+  ################################  
+  # # Back to the isolated/grouped stuff, get the mean and CI from those datasets
+  
+  df2 <- data %>% group_by(grouping, Model, measure) %>% 
+    summarise(low = round(mean(value) - ((1.96*sd(value))/sqrt(n())), 3), 
+              high = round(mean(value) + ((1.96*sd(value))/sqrt(n())), 3), 
+              value = round(mean(value), 3))
+  df1$grouping <- "No grouping"
+  
+  ################################  
+  # bind together both datasets with CIs
+  
+  newdf <- rbind(df2, df1)
+  newdf$rescaled_value = 1
+  newdf$label <- paste0(newdf$value, " (", newdf$low, ", ", newdf$high, ")")
+  newdf$grouping <- factor(newdf$grouping, levels = c("No grouping", "Grouped by station", "Grouped by day"))
+  
+  return(newdf)
+}
+```
+
+
+```{r}
+newdf <- make_f4_df(cv_df, station_subs = TRUE)
+
+m.labs <- c("Statistical", "Nonparametric")
+names(m.labs) <- c("2S", "AutoGluon")
+xlabs <- c("Unisolated", "Temporal", "Spatial")
+ylabs <- c(TeX(r'(NSE)', bold=TRUE), TeX(r'($r^2$)', italic=TRUE, bold=TRUE))
+
+ggplot(filter(newdf, measure %in% c("R2", "NSE"), Model %in% c("2S", "AutoGluon"))) +
+  geom_tile(aes(x = grouping, y = measure, fill = value), colour = "white") +
+  scale_fill_gradient2(low = "indianred3", mid = "white", high = "steelblue") + 
+  geom_text(aes(x = grouping, y = measure, label=label)) + 
+  theme_minimal() + 
+  scale_x_discrete(labels=xlabs, position="top") + 
+  scale_y_discrete(labels=ylabs) + 
+  theme(legend.position = "none", 
+      axis.title.y=element_blank(), 
+      axis.title.x=element_blank(), 
+      axis.text=element_text(size=12, face = "bold", color = "black"), 
+      strip.text = element_text(size=12, face = "bold", color = "black"), 
+      axis.ticks = element_blank()) + 
+  facet_grid(rows = vars(Model), labeller = labeller(Model = m.labs))
+```
+
+What is the variance of the true observations in space? Time? 
+```{r}
+var_in_time = var((cv_df %>% group_by(Day) %>% summarise(PM = mean(PM)))$PM)
+var_in_space = var((cv_df %>% group_by(station) %>% summarise(PM = mean(PM)))$PM)
+```
+
+
+
+```{r}
+cv_df_r <- read.csv("Data/output/all_cv_preds_random.csv")
+```
+
+
+```{r}
+newdf_random <- make_f4_df(cv_df_r, station_subs = TRUE)
+
+m.labs <- c("Statistical", "Nonparametric")
+names(m.labs) <- c("2S", "AutoGluon")
+xlabs <- c("Unisolated", "Temporal", "Spatial")
+ylabs <- c(TeX(r'(NSE)', bold=TRUE), TeX(r'($r^2$)', italic=TRUE, bold=TRUE))
+
+ggplot(filter(newdf_random, measure %in% c("R2", "NSE"), Model %in% c("2S", "AutoGluon"))) +
+  geom_tile(aes(x = grouping, y = measure, fill = value), colour = "white") +
+  scale_fill_gradient2(low = "indianred3", mid = "white", high = "steelblue") + 
+  geom_text(aes(x = grouping, y = measure, label=label)) + 
+  theme_minimal() + 
+  scale_x_discrete(labels=xlabs, position="top") + 
+  scale_y_discrete(labels=ylabs) + 
+  theme(legend.position = "none", 
+      axis.title.y=element_blank(), 
+      axis.title.x=element_blank(), 
+      axis.text=element_text(size=12, face = "bold", color = "black"), 
+      strip.text = element_text(size=12, face = "bold", color = "black"), 
+      axis.ticks = element_blank()) + 
+  facet_grid(rows = vars(Model), labeller = labeller(Model = m.labs))
+```
+
+Compare unisolated values for random vs spatial CV
+```{r}
+random <- filter(newdf_random, measure %in% c("R2", "NSE", "RMSE"), Model %in% c("2S", "AutoGluon"), grouping == "No grouping")
+spatial <- filter(newdf, measure %in% c("R2", "NSE", "RMSE"), Model %in% c("2S", "AutoGluon"), grouping == "No grouping")
+
+random$grouping = "Random"
+spatial$grouping = "Spatial"
+
+cv_comp <- rbind(random, spatial)
+
+m.labs <- c("Statistical", "Nonparametric")
+names(m.labs) <- c("2S", "AutoGluon")
+xlabs <- c("Random", "Spatial")
+ylabs <- c(TeX(r'(NSE)', bold=TRUE), TeX(r'($r^2$)', italic=TRUE, bold=TRUE))
+
+ggplot(filter(cv_comp, measure %in% c("R2", "NSE"), Model %in% c("2S", "AutoGluon"))) +
+  geom_tile(aes(y = grouping, x = measure, fill = value), colour = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue", limits = c(.7, .85)) + 
+  geom_text(aes(y = grouping, x = measure, label=label)) + 
+  theme_minimal() + 
+  scale_x_discrete(labels=ylabs, position="top") + 
+  scale_y_discrete(labels=xlabs) + 
+  theme(legend.position = "none", 
+      axis.title.y=element_blank(), 
+      axis.title.x=element_blank(), 
+      axis.text=element_text(size=12, face = "bold", color = "black"), 
+      strip.text = element_text(size=12, face = "bold", color = "black"), 
+      axis.ticks = element_blank()) + 
+  facet_grid(rows = vars(Model), labeller = labeller(Model = m.labs))
+
+```
+
+```{r}
+m.labs <- c("Statistical", "Nonparametric")
+names(m.labs) <- c("2S", "AutoGluon")
+xlabs <- c("Random", "Spatial")
+ylabs <- c("RMSE")
+
+ggplot(filter(cv_comp, measure %in% c("RMSE"), Model %in% c("2S", "AutoGluon"))) +
+  geom_tile(aes(y = grouping, x = measure, fill = value), colour = "white") +
+  scale_fill_gradient(low = "steelblue", high = "white", limits = c(1.5, 2.7)) + 
+  geom_text(aes(y = grouping, x = measure, label=label)) + 
+  theme_minimal() + 
+  scale_x_discrete(labels=ylabs, position="top") + 
+  scale_y_discrete(labels=xlabs) + 
+  theme(legend.position = "none", 
+      axis.title.y=element_blank(), 
+      axis.title.x=element_blank(), 
+      axis.text=element_text(size=12, face = "bold", color = "black"), 
+      strip.text = element_text(size=12, face = "bold", color = "black"), 
+      axis.ticks = element_blank()) + 
+  facet_grid(rows = vars(Model), labeller = labeller(Model = m.labs))
+```
+
+
+```{r}
+m.labs <- c("Statistical", "Nonparametric")
+names(m.labs) <- c("2S", "AutoGluon")
+
+ggplot(cv_df <- filter(cv_df, station %in% target_stations) %>% filter(Model %in% c("2S", "AutoGluon"))) + 
+  geom_point(aes(x = PM_pred, y = PM, color = as.factor(Day)), size = .001, alpha = .5) + 
+  geom_smooth(method = lm, se = FALSE, aes(x = PM_pred, y = PM, color = as.factor(Day)), size = .2, alpha = .5) + 
+  facet_grid(cols = vars(Model), labeller = labeller(Model = m.labs)) + 
+  theme_classic() +
+  theme(legend.position = "none") + 
+  xlab(TeX(r'(Predicted $PM_{2.5}$)')) + 
+  ylab(TeX(r'(Observed $PM_{2.5}$)')) + 
+  xlim(0,50) +
+  ylim(0,50) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dotted", color = "black", size = 1) + # one-to-one + 
+  geom_smooth(method = lm, se = FALSE, aes(x = PM_pred, y = PM), size = 1, color = "#F8766D", alpha = .2)
+```
+
+```{r}
+m.labs <- c("Statistical", "Nonparametric")
+names(m.labs) <- c("2S", "AutoGluon")
+
+ggplot(cv_df <- filter(cv_df, station %in% target_stations) %>% filter(Model %in% c("2S", "AutoGluon"))) + 
+  geom_point(aes(x = PM_pred, y = PM, color = as.factor(station)), size = .001, alpha = .5) + 
+  geom_smooth(method = lm, se = FALSE, aes(x = PM_pred, y = PM, color = as.factor(station)), size = .2, alpha = .5) + 
+  facet_grid(cols = vars(Model), labeller = labeller(Model = m.labs)) + 
+  theme_classic() +
+  theme(legend.position = "none") + 
+  xlab(TeX(r'(Predicted $PM_{2.5}$)')) + 
+  ylab(TeX(r'(Observed $PM_{2.5}$)')) + 
+  xlim(0,50) +
+  ylim(0,50) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dotted", color = "black", size = 1) + # one-to-one + 
+  geom_smooth(method = lm, se = FALSE, aes(x = PM_pred, y = PM), size = 1, color = "#F8766D", alpha = .2)
+```
+
+# de-mean by space and time and plot out the result
+```{r}
+library(datawizard)
+
+cv_df_a <- filter(cv_df, Model == "AutoGluon")
+noday <- cv_df_a %>% demean(c("PM", "PM_pred"), group = "Day")
+noday <- cbind(cv_df_a, noday)
+noday$demean = "day"
+
+nosta <- cv_df_a %>% demean(c("PM", "PM_pred"), group = "station")
+nosta <- cbind(cv_df_a, nosta)
+nosta$demean = "station"
+
+demeaned <- rbind(noday, nosta)
+
+m.labs <- c("By station", "By day")
+names(m.labs) <- c("station", "day")
+
+ggplot(demeaned) + 
+  geom_abline(intercept = 0, slope = 1, color = "grey", size = .5)  + 
+  geom_point(aes(x = PM_pred_between, y = PM_between), size = .001, alpha = .5) + 
+  facet_grid(cols = vars(demean), labeller = labeller(demean = m.labs)) + 
+  theme_classic() +
+  theme(legend.position = "none", 
+        aspect.ratio=1) + 
+  xlab(TeX(r'(Mean predicted $PM_{2.5}$)')) + 
+  ylab(TeX(r'(Mean observed $PM_{2.5}$)')) + 
+  xlim(0,50) +
+  ylim(0,50) + 
+    geom_smooth(method = lm, se = FALSE, aes(x = PM_pred_between, y = PM_between), size = .5, color = "darkred", alpha = .2)
+
+ggplot(demeaned) + 
+  geom_abline(intercept = 0, slope = 1, color = "grey", size = .5)  + 
+  geom_point(aes(x = PM_pred_within, y = PM_within), size = .001, alpha = .5) + 
+  facet_grid(cols = vars(demean), labeller = labeller(demean = m.labs)) + 
+  theme_classic() +
+  theme(legend.position = "none", 
+        aspect.ratio=1) + 
+  xlab(TeX(r'(Mean predicted $PM_{2.5}$)')) + 
+  ylab(TeX(r'(Mean observed $PM_{2.5}$)')) + 
+  xlim(0,50) +
+  ylim(0,50)
+```
+
+# pick a random 5 stations and a random 5 days to show my point with the colors. Use different color pallettes for the day and station point
+```{r}
+set.seed(111111011)
+
+day <- filter(cv_df_a, Day %in% sample(cv_df_a$Day, 15, replace = FALSE))
+day$subs <- "Day"
+day$group <- day$Day
+sta <- filter(cv_df_a, station %in% sample(cv_df_a$station, 3, replace = FALSE))
+sta$subs <- "Station"
+sta$group <- sta$station/100
+
+subs <- rbind(day, sta)
+
+m.labs <- c("Temporal prediction ability (3 location subsample)", "Spatial prediction ability (15 day subsample)")
+names(m.labs) <- c("Station", "Day")
+ggplot(subs) + 
+  geom_abline(intercept = 0, slope = 1, color = "grey", size = .5)  + 
+  geom_point(aes(x = PM_pred, y = PM, color = as.factor(group)), size = .001, alpha = .5) + 
+  facet_grid(cols = vars(subs), labeller = labeller(subs = m.labs)) + 
+  theme_classic() +
+  theme(legend.position = "none", 
+        aspect.ratio=1) + 
+  xlab(TeX(r'(Predicted $PM_{2.5}$)')) + 
+  ylab(TeX(r'(Observed $PM_{2.5}$)')) + 
+  xlim(0,50) +
+  ylim(0,50) + 
+  geom_smooth(method = lm, se = FALSE, aes(x = PM_pred, y = PM, color = as.factor(group)), size = .2, alpha = .5)
+```
+
+
+```{r}
+cv_df <- read.csv("Data/output/all_cv_preds.csv")
+#let's try r2 by day
+day_df = filter(cv_df, station %in% target_stations) %>% group_by(Day, Model) %>% 
+  summarise(R2 = cor(PM, PM_pred)^2, 
+            RMSE = sqrt(mean((PM-PM_pred)^2)),
+            NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM)) %>% 
+  pivot_longer(cols = c("R2", "RMSE", "NSE"), names_to = "measure")
+```
+
+```{r}
+m.labs <- c("RMSE", "r2" , "NSE") #TeX(r'($r^2$)', italic=TRUE)
+names(m.labs) <- c("RMSE","R2","NSE")
+
+day_df$measure <- factor(day_df$measure, levels = c("RMSE","R2","NSE"))
+filter(day_df, Model %in% c("2S", "AutoGluon")) %>% 
+  ggplot(aes(x = mean_PM, y = value, color = Model)) + 
+    scale_color_discrete(labels=c("Statistical", "Nonparametric")) + 
+    geom_point() + 
+    geom_smooth(se = F) + 
+    facet_grid(row = vars(measure), labeller = labeller(measure = m.labs), scales = "free") + 
+    theme_bw() + 
+    theme(legend.position = c(.2, .9), 
+          legend.title = element_blank(),
+        #axis.text.x = element_text(angle = 30, hjust = 1), 
+        axis.title.y=element_blank()) + 
+  xlab(TeX(r'(Average $PM_{2.5}$ by day)'))
+```
+
+get station standard deviations
+```{r}
+station_df = filter(cv_df, station %in% target_stations) %>% group_by(station, Model) %>% 
+  summarise(R2 = cor(PM, PM_pred)^2, 
+            RMSE = sqrt(mean((PM-PM_pred)^2)),
+            NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)),
+            Bias = mean(PM-PM_pred),
+            mean_PM = mean(PM), 
+            sd_PM = sd(PM)) %>% 
+  pivot_longer(cols = c("R2", "RMSE", "NSE", "Bias"), names_to = "measure")
+```
+
+```{r}
+filter(station_df, measure == "RMSE", Model == "AutoGluon")$value %>% sd()
+filter(station_df, measure == "R2", Model == "AutoGluon")$value %>% sd()
+filter(station_df, measure == "Bias", Model == "AutoGluon")$value %>% sd()
+filter(station_df, measure == "RMSE", Model == "2S")$value %>% sd()
+filter(station_df, measure == "R2", Model == "2S")$value %>% sd()
+filter(station_df, measure == "Bias", Model == "2S")$value %>% sd()
+```
+
