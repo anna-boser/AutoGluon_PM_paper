@@ -1,7 +1,7 @@
 # Accounting for spatio-temporal structure when validating environmental machine learning models
 This repository holds all code necessary to conduct the analysis for *Accounting for spatio-temporal structure when validating environmental machine learning models*. 
 
-Note: *Full.csv* and *Small_Grid.csv* are too large to be stored on GitHub, but can be downloaded at the provided links. 
+Note: *Full.csv*[https://drive.google.com/file/d/1eqrPDRcOFm9jOMIe5CWy8BxRTUBWGcf3/view?usp=sharing] and *Small_Grid.csv*[https://drive.google.com/file/d/1M1mAIEVWL00jPFf2sNf22mitPDAUBPay/view?usp=sharing] are too large to be stored on GitHub, but can be downloaded at the provided links. 
 
 Contents: 
 
