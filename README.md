@@ -1,4 +1,4 @@
-# AutoGluon_PM_paper
+# Accounting for spatio-temporal structure when validating environmental machine learning models
 This repository holds all code necessary to conduct the analysis for *Accounting for spatio-temporal structure when validating environmental machine learning models*. 
 
 Contents: 
