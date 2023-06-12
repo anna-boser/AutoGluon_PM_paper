@@ -433,7 +433,7 @@ sta$group <- sta$station/100
 
 subs <- rbind(day, sta)
 
-m.labs <- c("Temporal prediction ability (3 location subsample)", "Spatial prediction ability (15 day subsample)")
+m.labs <- c("Group by location", "Group by day")
 names(m.labs) <- c("Station", "Day")
 ggplot(subs) + 
   geom_abline(intercept = 0, slope = 1, color = "grey", size = .5)  + 
