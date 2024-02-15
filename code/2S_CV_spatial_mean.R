@@ -85,7 +85,7 @@ new_var <- function(previous_r2, current_variables, remaining_variables, Data){ 
   }
 }
 
-variables <- c("Elevation","Emissions","Forest", "Roads","Streets", "Plumes_High" ,"Plumes_Med" , "Plumes_Low", "Max_Temp", "Max_Wind" ,"Precip" , "Rel_Humidity","Wind_Dir" ,"BLH", "AOD")     
+variables <- c("Elevation","Emissions","Forest", "Roads","Streets", "Plumes_High" ,"Plumes_Med", "Plumes_Low", "Max_Temp", "Max_Wind" ,"Precip" , "Rel_Humidity","Wind_Dir" ,"BLH", "AOD")     
 
 formula_search <- function(Data){
   current_variables = c()

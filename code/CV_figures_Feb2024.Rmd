@@ -83,8 +83,8 @@ ggplot(model_df, aes(x = y_hat, y = y, color = group)) +
 
 # Simpson's paradox example figure
 ```{r}
-sp <- data.frame(group = as.factor(c(1,1,1,1, 2,2,2,2)), x = c(1,2,3,4,5,6,7,8), y = c(5,6,7,8,1,2,3,4))
-ggplot(sp, aes(x = x, y =y)) + 
+sp <- data.frame(group = as.factor(c(1,1,1,1, 2,2,2,2)), Predictions = 8:1, Observations = c(5,6,7,8,1,2,3,4))
+ggplot(sp, aes(x = Predictions, y = Observations)) + 
   geom_smooth(method = 'lm', se = F, color = "black", linetype = "dotted") +
   geom_point(aes(col = group), size = 4, alpha = .5) + 
   geom_smooth(method = 'lm', aes(col = group)) +
@@ -92,7 +92,14 @@ ggplot(sp, aes(x = x, y =y)) +
   ylim(c(0.5,8.5)) + 
   theme_classic() + 
   theme(legend.position = "none", 
-        aspect.ratio=1)
+        aspect.ratio=1, 
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+ggsave("figures/Simpson_example.pdf", width = 3, height = 3, units = c("in"))
+ggsave("figures/Simpson_example.png", width = 3, height = 3, units = c("in"))
 
 # get the colors for annotation
 library(scales)
@@ -175,9 +182,9 @@ make_f4_df <- function(cv_df, station_subs = TRUE){
   # Back to the unisolated stuff, get the mean and CI from the bootstrapped datasets
   r2_df <- df %>% 
     group_by(Model) %>%
-    summarise(value = round(mean(r2), 3), 
-              low = round(quantile(r2, probs = .025), 3), 
-              high = round(quantile(r2, probs = .975), 3), 
+    summarise(value = round(mean(r2), 2), 
+              low = round(quantile(r2, probs = .025), 2), 
+              high = round(quantile(r2, probs = .975), 2), 
               measure = "R2")
   
   r2_df$rescaled_value = (r2_df$value - mean(r2_df$value))/sd(r2_df$value)
@@ -185,8 +192,8 @@ make_f4_df <- function(cv_df, station_subs = TRUE){
   rmse_df <- df %>% 
     group_by(Model) %>%
     summarise(value = round(mean(rmse), 2), 
-              low = round(quantile(rmse, probs = .025), 3), 
-              high = round(quantile(rmse, probs = .975), 3), 
+              low = round(quantile(rmse, probs = .025), 2), 
+              high = round(quantile(rmse, probs = .975), 2), 
               measure = "RMSE")
   
   rmse_df$rescaled_value = ((1/rmse_df$value) - mean(1/rmse_df$value))/sd(1/rmse_df$value)
@@ -194,8 +201,8 @@ make_f4_df <- function(cv_df, station_subs = TRUE){
   nse_df <- df %>% 
     group_by(Model) %>%
     summarise(value = round(mean(nse), 2), 
-              low = round(quantile(nse, probs = .025), 3), 
-              high = round(quantile(nse, probs = .975), 3), 
+              low = round(quantile(nse, probs = .025), 2), 
+              high = round(quantile(nse, probs = .975), 2), 
               measure = "NSE")
   
   nse_df$rescaled_value = (nse_df$value - mean(nse_df$value))/sd(nse_df$value)
@@ -206,9 +213,9 @@ make_f4_df <- function(cv_df, station_subs = TRUE){
   # # Back to the isolated/grouped stuff, get the mean and CI from those datasets
   
   df2 <- data %>% group_by(grouping, Model, measure) %>% 
-    summarise(low = round(mean(value) - ((1.96*sd(value))/sqrt(n())), 3), 
-              high = round(mean(value) + ((1.96*sd(value))/sqrt(n())), 3), 
-              value = round(mean(value), 3))
+    summarise(low = round(mean(value) - ((1.96*sd(value))/sqrt(n())), 2), 
+              high = round(mean(value) + ((1.96*sd(value))/sqrt(n())), 2), 
+              value = round(mean(value), 2))
   df1$grouping <- "No grouping"
   
   ################################  
@@ -227,7 +234,7 @@ make_f4_df <- function(cv_df, station_subs = TRUE){
 ```{r}
 newdf <- make_f4_df(cv_df, station_subs = TRUE)
 
-m.labs <- c("Statistical", "Nonparametric")
+m.labs <- c("Linear", "Nonparametric")
 names(m.labs) <- c("2S", "AutoGluon")
 xlabs <- c("Unisolated", "Temporal", "Spatial")
 ylabs <- c(TeX(r'(NSE)', bold=TRUE), TeX(r'($r^2$)', italic=TRUE, bold=TRUE))
@@ -246,6 +253,9 @@ ggplot(filter(newdf, measure %in% c("R2", "NSE"), Model %in% c("2S", "AutoGluon"
       strip.text = element_text(size=12, face = "bold", color = "black"), 
       axis.ticks = element_blank()) + 
   facet_grid(rows = vars(Model), labeller = labeller(Model = m.labs))
+
+ggsave("figures/Step2.pdf", width = 7, height = 3, units = c("in"))
+ggsave("figures/Step2.png", width = 7, height = 3, units = c("in"))
 ```
 
 What is the variance of the true observations in space? Time? 
@@ -264,7 +274,7 @@ cv_df_r <- read.csv("Data/output/all_cv_preds_random.csv")
 ```{r}
 newdf_random <- make_f4_df(cv_df_r, station_subs = TRUE)
 
-m.labs <- c("Statistical", "Nonparametric")
+m.labs <- c("Linear", "Nonparametric")
 names(m.labs) <- c("2S", "AutoGluon")
 xlabs <- c("Unisolated", "Temporal", "Spatial")
 ylabs <- c(TeX(r'(NSE)', bold=TRUE), TeX(r'($r^2$)', italic=TRUE, bold=TRUE))
@@ -295,7 +305,7 @@ spatial$grouping = "Spatial"
 
 cv_comp <- rbind(random, spatial)
 
-m.labs <- c("Statistical", "Nonparametric")
+m.labs <- c("Linear", "Nonparametric")
 names(m.labs) <- c("2S", "AutoGluon")
 xlabs <- c("Random", "Spatial")
 ylabs <- c(TeX(r'(NSE)', bold=TRUE), TeX(r'($r^2$)', italic=TRUE, bold=TRUE))
@@ -315,10 +325,13 @@ ggplot(filter(cv_comp, measure %in% c("R2", "NSE"), Model %in% c("2S", "AutoGluo
       axis.ticks = element_blank()) + 
   facet_grid(rows = vars(Model), labeller = labeller(Model = m.labs))
 
+ggsave("figures/Step1b.pdf", width = 5, height = 3, units = c("in"))
+ggsave("figures/Step1b.png", width = 5, height = 3, units = c("in"))
+
 ```
 
 ```{r}
-m.labs <- c("Statistical", "Nonparametric")
+m.labs <- c("Linear", "Nonparametric")
 names(m.labs) <- c("2S", "AutoGluon")
 xlabs <- c("Random", "Spatial")
 ylabs <- c("RMSE")
@@ -337,11 +350,14 @@ ggplot(filter(cv_comp, measure %in% c("RMSE"), Model %in% c("2S", "AutoGluon")))
       strip.text = element_text(size=12, face = "bold", color = "black"), 
       axis.ticks = element_blank()) + 
   facet_grid(rows = vars(Model), labeller = labeller(Model = m.labs))
+
+ggsave("figures/Step1a.pdf", width = 3.2, height = 3, units = c("in"))
+ggsave("figures/Step1a.png", width = 3.2, height = 3, units = c("in"))
 ```
 
 
 ```{r}
-m.labs <- c("Statistical", "Nonparametric")
+m.labs <- c("Linear", "Nonparametric")
 names(m.labs) <- c("2S", "AutoGluon")
 
 ggplot(cv_df <- filter(cv_df, station %in% target_stations) %>% filter(Model %in% c("2S", "AutoGluon"))) + 
@@ -359,7 +375,7 @@ ggplot(cv_df <- filter(cv_df, station %in% target_stations) %>% filter(Model %in
 ```
 
 ```{r}
-m.labs <- c("Statistical", "Nonparametric")
+m.labs <- c("Linear", "Nonparametric")
 names(m.labs) <- c("2S", "AutoGluon")
 
 ggplot(cv_df <- filter(cv_df, station %in% target_stations) %>% filter(Model %in% c("2S", "AutoGluon"))) + 
@@ -437,7 +453,7 @@ m.labs <- c("Group by location", "Group by day")
 names(m.labs) <- c("Station", "Day")
 ggplot(subs) + 
   geom_abline(intercept = 0, slope = 1, color = "grey", size = .5)  + 
-  geom_point(aes(x = PM_pred, y = PM, color = as.factor(group)), size = .001, alpha = .5) + 
+  geom_point(aes(x = PM_pred, y = PM, color = as.factor(group)), size = .01, alpha = .5) + 
   facet_grid(cols = vars(subs), labeller = labeller(subs = m.labs)) + 
   theme_classic() +
   theme(legend.position = "none", 
@@ -446,7 +462,7 @@ ggplot(subs) +
   ylab(TeX(r'(Observed $PM_{2.5}$)')) + 
   xlim(0,50) +
   ylim(0,50) + 
-  geom_smooth(method = lm, se = FALSE, aes(x = PM_pred, y = PM, color = as.factor(group)), size = .2, alpha = .5)
+  geom_smooth(method = lm, se = FALSE, aes(x = PM_pred, y = PM, color = as.factor(group)), size = .5, alpha = .5)
 ```
 
 
@@ -469,7 +485,7 @@ names(m.labs) <- c("RMSE","R2","NSE")
 day_df$measure <- factor(day_df$measure, levels = c("RMSE","R2","NSE"))
 filter(day_df, Model %in% c("2S", "AutoGluon")) %>% 
   ggplot(aes(x = mean_PM, y = value, color = Model)) + 
-    scale_color_discrete(labels=c("Statistical", "Nonparametric")) + 
+    scale_color_discrete(labels=c("Linear", "Nonparametric")) + 
     geom_point() + 
     geom_smooth(se = F) + 
     facet_grid(row = vars(measure), labeller = labeller(measure = m.labs), scales = "free") + 
@@ -500,5 +516,77 @@ filter(station_df, measure == "Bias", Model == "AutoGluon")$value %>% sd()
 filter(station_df, measure == "RMSE", Model == "2S")$value %>% sd()
 filter(station_df, measure == "R2", Model == "2S")$value %>% sd()
 filter(station_df, measure == "Bias", Model == "2S")$value %>% sd()
+```
+
+### Check how changing the problem to estimating PM - mean(daily PM) makes for better predictions
+```{r}
+cv_df_demean <- read.csv("Data/output/Autogluon_cv_preds_w_spatial_var.csv")
+target_stations <- read.csv("Data/datasets/Small_Ids.csv")[,1]
+
+newdf <- make_f4_df(cv_df_demean, station_subs = TRUE)
+
+m.labs <- c("De-meaned", "Regular")
+names(m.labs) <- c("AutoGluon_spatial_var", "AutoGluon")
+xlabs <- c("Unisolated", "Temporal", "Spatial")
+ylabs <- c(TeX(r'(NSE)', bold=TRUE), TeX(r'($r^2$)', italic=TRUE, bold=TRUE))
+
+ggplot(filter(newdf, measure %in% c("R2", "NSE"), Model %in% c("AutoGluon_spatial_var", "AutoGluon"))) +
+  geom_tile(aes(x = grouping, y = measure, fill = value), colour = "white") +
+  scale_fill_gradient2(low = "indianred3", mid = "white", high = "steelblue") + 
+  geom_text(aes(x = grouping, y = measure, label=label)) + 
+  theme_minimal() + 
+  scale_x_discrete(labels=xlabs, position="top") + 
+  scale_y_discrete(labels=ylabs) + 
+  theme(legend.position = "none", 
+      axis.title.y=element_blank(), 
+      axis.title.x=element_blank(), 
+      axis.text=element_text(size=12, face = "bold", color = "black"), 
+      strip.text = element_text(size=12, face = "bold", color = "black"), 
+      axis.ticks = element_blank()) + 
+  facet_grid(rows = vars(Model), labeller = labeller(Model = m.labs))
+
+ggsave("figures/Reviewer.pdf", width = 7, height = 3, units = c("in"))
+ggsave("figures/Reviewer.png", width = 7, height = 3, units = c("in"))
+```
+
+```{r}
+set.seed(1)
+
+cv_df_a <- filter(cv_df_demean, Model == "AutoGluon_spatial_var")
+
+day <- filter(cv_df_a, Day %in% sample(cv_df_a$Day, 15, replace = FALSE))
+day$subs <- "Day"
+day$group <- day$Day
+sta <- filter(cv_df_a, station %in% sample(cv_df_a$station, 3, replace = FALSE))
+sta$subs <- "Station"
+sta$group <- sta$station/100
+
+subs <- rbind(day, sta)
+
+by_day <- day %>% 
+  group_by(Model, Day) %>% 
+  summarise(R2 = cor(PM, PM_pred)^2, 
+            RMSE = mean(sqrt((PM-PM_pred)^2)), 
+            NSE = 1 - (mean((PM-PM_pred)^2)/mean((PM-mean(PM))^2)),
+            beta = lm(PM ~ PM_pred)$coefficients[2],
+            grouping = "Grouped by day") 
+
+print(mean(by_day$R2))
+
+
+m.labs <- c("Group by location", "Group by day")
+names(m.labs) <- c("Station", "Day")
+ggplot(subs) + 
+  geom_abline(intercept = 0, slope = 1, color = "grey", size = .5)  + 
+  geom_point(aes(x = PM_pred, y = PM, color = as.factor(group)), size = .01, alpha = .5) + 
+  facet_grid(cols = vars(subs), labeller = labeller(subs = m.labs)) + 
+  theme_classic() +
+  theme(legend.position = "none", 
+        aspect.ratio=1) + 
+  xlab(TeX(r'(Predicted $PM_{2.5}$)')) + 
+  ylab(TeX(r'(Observed $PM_{2.5}$)')) + 
+  xlim(0,50) +
+  ylim(0,50) + 
+  geom_smooth(method = lm, se = FALSE, aes(x = PM_pred, y = PM, color = as.factor(group)), size = .5, alpha = .5)
 ```
 

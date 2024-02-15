@@ -3,6 +3,42 @@ This repository holds all code necessary to conduct the analysis for *Accounting
 
 Note: [*Full.csv*](https://drive.google.com/file/d/1eqrPDRcOFm9jOMIe5CWy8BxRTUBWGcf3/view?usp=sharing) and [*Small_Grid.csv*](https://drive.google.com/file/d/1M1mAIEVWL00jPFf2sNf22mitPDAUBPay/view?usp=sharing) are too large to be stored on GitHub, but can be downloaded at the provided links. 
 
+Setup: 
+In order to run the portion of this code that is in python (the .ipynb files), install conda and run the following commands in the terminal: 
+```{bash}
+conda create -n test1 python=3.8 numpy==1.19.2 pandas==1.4.2  -y 
+conda activate test1
+# Ensure the most up to date pip version
+# pip install -U pip  
+# pip install -U setuptools
+# pip install -U "mxnet<2.0.0"
+# Install pre-release, frozen to a particual pre-release for stability
+pip install --pre "autogluon==0.0.16b20201214" 
+# pip install -U ipykernel
+# Optional -- makes environment discoverable in VS Code
+# python -m ipykernel install --user --name autogluon_e2 --display-name "Python (autogluon_e2)" 
+```
+
+What happened: 
+- successfully made original conda env with `conda create -n test1 python=3.8 numpy==1.19.2 pandas==1.4.2  -y `
+- then ran `pip install --pre "autogluon==0.0.16b20201214"`, which also ran successfully. it however uninstalled numpy 1.19.2
+- opened pyhon and ran `from autogluon.tabular import TabularPrediction as task`. Got error: 
+```
+AttributeError: module 'numpy' has no attribute 'float'.
+`np.float` was a deprecated alias for the builtin `float`. To avoid this error in existing code, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+The aliases was originally deprecated in NumPy 1.20; for more details and guidance see the original release note at:
+    https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+```
+
+Try with updated autogluon version: 
+```
+conda create -n updated_autogluon python=3.8  -y 
+conda activate updated_autogluon
+pip install autogluon
+pip install -U ipykernel
+python -m ipykernel install --user --name updated_autogluon --display-name "Python (updated_autogluon)" 
+```
+
 Contents: 
 
 **Data**

@@ -37,3 +37,12 @@ vignettes/*.pdf
 
 # Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
 rsconnect/
+
+*/*.pkl
+AutogluonModels/*
+*/.DS_Store
+.DS_Store
+code/AutogluonModels/*
+data/Datasets/Full.csv
+data/Datasets/Small_Grid.csv
+
